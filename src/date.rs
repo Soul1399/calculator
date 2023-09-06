@@ -1,6 +1,6 @@
 use std::error::Error;
 
-#[derive(Eq, Clone)]
+#[derive(Clone, Copy, Debug, Eq)]
 pub struct DateKey {
     month: u8,
     year: i32

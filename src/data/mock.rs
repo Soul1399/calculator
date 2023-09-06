@@ -6,7 +6,7 @@ use crate::{SALES_CODE, CASH_CODE};
 use crate::data::IndicatorInputData;
 
 
-pub fn fake_context() -> Vec<FiscalYear> {
+pub fn fake_context<'y>() -> Vec<FiscalYear> {
     const START: u8 = 3;
     const DELAY: u8 = 8;
     let mut year = 2019;
@@ -14,7 +14,7 @@ pub fn fake_context() -> Vec<FiscalYear> {
     
     let mut rg = START..=DELAY;
     let y: Vec<DateKey> = rg.into_iter().map(|x| DateKey::build(x, year)).collect();
-    years.push(FiscalYear{months: Rc::new(y)});
+    years.push(FiscalYear::build(Rc::new(y)));
     let delay: i8 = DELAY as i8 - 12;
     for _ in 0..2 {
         rg = 1..=12;
@@ -28,7 +28,7 @@ pub fn fake_context() -> Vec<FiscalYear> {
             }
             DateKey::build( m as u8, year)
         }).collect();
-        years.push(FiscalYear{months: Rc::new(y)});
+        years.push(FiscalYear::build(Rc::new(y)));
     }
 
     years

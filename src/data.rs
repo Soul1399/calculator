@@ -7,7 +7,7 @@ pub fn get_indicators() -> Vec<IndicatorInput> {
     build_inputs(indicator_data(), get_config())
 }
 
-pub fn load_context(context_id: isize) -> Vec<FiscalYear> {
+pub fn load_context<'y>(context_id: isize) -> Vec<FiscalYear> {
     mock::fake_context()
 }
 
