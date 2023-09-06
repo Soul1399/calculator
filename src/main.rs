@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let list = data::get_indicators();
 
     // list.iter().for_each(|x| println!("Indicator: {}", x.indic.indicator().unwrap().default_name()));
-    // list.iter().for_each(|x| println!("{}", x.key.class.unwrap_or_default()));
+    // list.iter().for_each(|x| println!("{}", x.key.span.unwrap_or_default()));
 
     Ok(())
 }

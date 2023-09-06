@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::date::DateKey;
 use crate::fiscalyear::FiscalYear;
-use crate::{SALES_CODE, MTH, CASH_CODE};
+use crate::{SALES_CODE, CASH_CODE};
 use crate::data::IndicatorInputData;
 
 
@@ -40,7 +40,7 @@ pub fn indicator_data() -> Vec<IndicatorInputData> {
             code: &SALES_CODE,
             context: 1, 
             author: "John Smille".to_string(),
-            class: Some(&MTH),
+            span: None,
             month: 1,
             year: 2020,
             computed: None,
@@ -50,7 +50,7 @@ pub fn indicator_data() -> Vec<IndicatorInputData> {
             code: &SALES_CODE,
             context: 1, 
             author: "John Smille".to_string(),
-            class: Some(&MTH),
+            span: None,
             month: 2,
             year: 2020,
             computed: None,
@@ -60,7 +60,7 @@ pub fn indicator_data() -> Vec<IndicatorInputData> {
             code: &SALES_CODE,
             context: 1, 
             author: "John Smille".to_string(),
-            class: Some(&MTH),
+            span: None,
             month: 5,
             year: 2020,
             computed: None,
@@ -70,7 +70,7 @@ pub fn indicator_data() -> Vec<IndicatorInputData> {
             code: &CASH_CODE,
             context: 1, 
             author: "John Smille".to_string(),
-            class: Some(&MTH),
+            span: None,
             month: 1,
             year: 2020,
             computed: None,
@@ -80,7 +80,7 @@ pub fn indicator_data() -> Vec<IndicatorInputData> {
             code: &CASH_CODE,
             context: 1, 
             author: "John Smille".to_string(),
-            class: Some(&MTH),
+            span: None,
             month: 9,
             year: 2020,
             computed: None,

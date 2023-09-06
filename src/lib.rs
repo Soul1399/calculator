@@ -3,8 +3,6 @@ use std::{error::Error, rc::{Rc, Weak}, cell::RefCell, ops::Add};
 use date::DateKey;
 use enum_iterator::{all, Sequence};
 use fsum::FSum;
-use std::str::FromStr;
-use strum_macros::EnumString;
 
 pub const SALES_CODE: isize = 37;
 pub const EBITDA_CODE: isize = 48;
@@ -15,7 +13,6 @@ pub const NET_DEBT_CODE: isize = 30;
 pub const FY: &str = "Full Year";
 pub const LTM: &str = "Last Twelve Months";
 pub const QT: &str = "Quarter";
-pub const MTH: &str = "Month";
 
 #[repr(isize)]
 #[derive(Debug, PartialEq, Sequence)]
@@ -200,7 +197,7 @@ pub struct UserInput {
 
 pub struct ComputeKey {
     pub date: DateKey,
-    pub class: Option<&'static str>
+    pub span: Option<&'static str>
 }
 
 pub mod data;

@@ -55,4 +55,8 @@ impl FiscalYear {
             None => Err("Invalid position: connot find quarter")
         }
     }
+
+    pub fn find<'a>(v: &'a Vec<Self>, d: &'a DateKey) -> Option<&'a FiscalYear> {
+        v.iter().find(|fy| fy.min() <= Ok(d) && Ok(d) <= fy.max())
+    }
 }

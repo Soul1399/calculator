@@ -1,4 +1,4 @@
-use crate::{ComputedIndicator, Indicator, SALES_CODE, ComputeMode, NET_DEBT_CODE, CASH_CODE, EBITA_CODE, EBITDA_CODE, MTH, IndicatorInput, UserInput, ComputeKey, DateKey, fiscalyear::FiscalYear};
+use crate::{ComputedIndicator, Indicator, SALES_CODE, ComputeMode, NET_DEBT_CODE, CASH_CODE, EBITA_CODE, EBITDA_CODE, IndicatorInput, UserInput, ComputeKey, DateKey, fiscalyear::FiscalYear};
 use std::{collections::HashMap, rc::Rc, cell::RefCell};
 
 use self::mock::indicator_data;
@@ -28,7 +28,7 @@ fn build_input(conf: &HashMap<isize, ComputeMode>, input: &IndicatorInputData) -
             None => panic!("Input was undefined")
         },
         input: RefCell::new(UserInput { inputed: input.inputed, computed: input.computed, author: input.author.to_string() }),
-        key: Rc::new(ComputeKey { date: dt, class: input.class })
+        key: Rc::new(ComputeKey { date: dt, span: input.span })
     }
 }
 
@@ -45,7 +45,7 @@ fn get_config() -> HashMap<isize, ComputeMode> {
 pub struct IndicatorInputData {
     pub code: &'static isize,
     pub context: isize,
-    pub class: Option<&'static str>,
+    pub span: Option<&'static str>,
     pub month: u8,
     pub year: i32,
     pub inputed: Option<f64>,
