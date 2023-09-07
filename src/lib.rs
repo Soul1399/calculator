@@ -1,5 +1,5 @@
 
-use std::{error::Error, rc::{Rc, Weak}, cell::RefCell, ops::Add};
+use std::{error::Error, rc::{Rc, Weak}, cell::RefCell, ops::Add, collections::HashMap};
 use date::DateKey;
 use enum_iterator::{all, Sequence};
 use fsum::FSum;
@@ -12,7 +12,7 @@ pub const NET_DEBT_CODE: isize = 30;
 
 pub const FY: &str = "Full Year";
 pub const LTM: &str = "Last Twelve Months";
-pub const QT: &str = "Quarter";
+pub const SLC: &str = "Slice";
 
 #[repr(isize)]
 #[derive(Debug, PartialEq, Sequence)]
@@ -185,8 +185,22 @@ impl Descriptive for Indicator {
 
 pub struct IndicatorInput {
     pub input: RefCell<UserInput>,
-    pub indic: ComputedIndicator<Indicator>,
+    pub code: &'static isize,
+    pub context: isize,
     pub key: Rc<ComputeKey>
+}
+
+impl IndicatorInput {
+    pub fn info(&self, conf: &HashMap<isize, ComputeMode>) -> ComputedIndicator<Indicator> {
+        let idc = Rc::new(Indicator::build(self.context, *self.code));
+        match conf.get(self.code) {
+            Some(ComputeMode::AddUp) => ComputedIndicator::AddUp(Rc::clone(&idc)),
+            Some(ComputeMode::Default) => ComputedIndicator::Default(Rc::clone(&idc)),
+            Some(ComputeMode::Avg) => ComputedIndicator::Avg(Rc::clone(&idc)),
+            Some(ComputeMode::Complex) => ComputedIndicator::Complex(Rc::clone(&idc)),
+            None => panic!("Input was undefined")
+        }
+    }
 }
 
 pub struct UserInput {

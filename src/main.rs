@@ -1,5 +1,5 @@
-use std::{error::Error, rc::Rc};
 
+use std::{error::Error, rc::Rc};
 use calculator::{Descriptive, Indicator, ComputedIndicator, CASH_CODE, SALES_CODE, data};
 
 fn main() -> Result<(), Box<dyn Error>> {

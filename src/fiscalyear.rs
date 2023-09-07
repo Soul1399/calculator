@@ -1,4 +1,4 @@
-use std::{rc::Rc , collections::HashMap};
+use std::{rc::Rc , collections::HashMap, borrow::BorrowMut};
 
 use crate::date::DateKey;
 
@@ -37,9 +37,25 @@ impl FiscalYear {
             None => Err("Invalid position")
         }
     }
+    pub fn find_slice(&mut self, date: &DateKey, size: Option<u8>) -> Result<Vec<DateKey>, &'static str> {
+        self.build_slices(size.unwrap_or(3));
+        let slice = self.slices.iter()
+            .filter(|x| x.1.iter().any(|d| d == date))
+            .map(|x| x.1)
+            .next();
 
-    pub fn find<'a>(v: &'a Vec<Self>, d: &'a DateKey) -> Option<&'a FiscalYear> {
-        v.iter().find(|fy| fy.min() <= Ok(d) && Ok(d) <= fy.max())
+        match slice {
+            Some(x) => Ok(x.to_vec()),
+            None => Err("Slice not found")
+        }
+    }
+
+    pub fn find<'a>(v: &'a mut Vec<Self>, d: &DateKey) -> Result<&'a mut FiscalYear, Result<(), &'static str>> {
+        let _y = v.iter_mut().find(|fy| fy.min() <= Ok(d) && Ok(d) <= fy.max());
+        match _y {
+            None => return Err(Err("Date was not found in any fiscal years")),
+            Some(x) => Ok(x)
+        }
     }
 
     fn build_slices(&mut self, size: u8) {

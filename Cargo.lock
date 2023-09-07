@@ -8,8 +8,10 @@ version = "0.1.0"
 dependencies = [
  "enum-iterator",
  "fsum",
+ "quote",
  "strum",
  "strum_macros",
+ "syn",
 ]
 
 [[package]]

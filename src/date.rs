@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, cmp::Ordering};
 
 #[derive(Clone, Copy, Debug, Eq)]
 pub struct DateKey {
@@ -81,7 +81,7 @@ impl std::fmt::Display for DateError {
 }
 
 impl PartialOrd for DateKey {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match self.year.partial_cmp(&other.year) {
             Some(core::cmp::Ordering::Equal) => {}
             ord => return ord,
@@ -94,7 +94,7 @@ impl PartialOrd for DateKey {
     }
 
     fn le(&self, other: &Self) -> bool {
-        matches!(self.partial_cmp(other), Some(core::cmp::Ordering::Less | core::cmp::Ordering::Equal))
+        matches!(self.partial_cmp(other), Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal))
     }
 
     fn gt(&self, other: &Self) -> bool {
@@ -102,7 +102,7 @@ impl PartialOrd for DateKey {
     }
 
     fn ge(&self, other: &Self) -> bool {
-        matches!(self.partial_cmp(other), Some(core::cmp::Ordering::Greater | core::cmp::Ordering::Equal))
+        matches!(self.partial_cmp(other), Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal))
     }
 }
 

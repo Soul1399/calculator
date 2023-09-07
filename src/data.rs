@@ -4,35 +4,30 @@ use std::{collections::HashMap, rc::Rc, cell::RefCell};
 use self::mock::indicator_data;
 
 pub fn get_indicators() -> Vec<IndicatorInput> {
-    build_inputs(indicator_data(), get_config())
+    build_inputs(indicator_data())
 }
 
 pub fn load_context<'y>(context_id: isize) -> Vec<FiscalYear> {
     mock::fake_context()
 }
 
-fn build_inputs(data: Vec<IndicatorInputData>, conf: HashMap<isize, ComputeMode>) -> Vec<IndicatorInput> {
+fn build_inputs(data: Vec<IndicatorInputData>) -> Vec<IndicatorInput> {
     data.iter().map(|input| {
-        build_input(&conf, input)
+        build_input(input)
     }).collect()
 }
 
-fn build_input(conf: &HashMap<isize, ComputeMode>, input: &IndicatorInputData) -> IndicatorInput {
+fn build_input(input: &IndicatorInputData) -> IndicatorInput {
     let dt = DateKey::build(input.month, input.year);
     IndicatorInput {
-        indic: match conf.get(input.code) {
-            Some(ComputeMode::AddUp) => ComputedIndicator::AddUp(Rc::new(Indicator::build(input.context, *input.code))),
-            Some(ComputeMode::Default) => ComputedIndicator::Default(Rc::new(Indicator::build(input.context, *input.code))),
-            Some(ComputeMode::Avg) => ComputedIndicator::Avg(Rc::new(Indicator::build(input.context, *input.code))),
-            Some(ComputeMode::Complex) => ComputedIndicator::Complex(Rc::new(Indicator::build(input.context, *input.code))),
-            None => panic!("Input was undefined")
-        },
+        context: input.context,
+        code: input.code,
         input: RefCell::new(UserInput { inputed: input.inputed, computed: input.computed, author: input.author.to_string() }),
         key: Rc::new(ComputeKey { date: dt, span: input.span })
     }
 }
 
-fn get_config() -> HashMap<isize, ComputeMode> {
+pub fn get_config() -> HashMap<isize, ComputeMode> {
     let mut config = HashMap::new();
     config.insert(SALES_CODE, ComputeMode::AddUp);
     config.insert(EBITDA_CODE, ComputeMode::AddUp);

@@ -13,3 +13,5 @@ pub fn is_between<'a, T>(value: &'a T, min: Option<&'a T>, max: Option<&'a T>) -
 pub fn is_between_copy<T>(value: Box<T>, min: T, max: T) -> bool where T: PartialOrd {
     min < *value && *value < max
 }
+
+pub mod macros;
