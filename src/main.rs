@@ -1,6 +1,6 @@
 
 use std::{error::Error, rc::Rc};
-use calculator::{Descriptive, Indicator, ComputedIndicator, CASH_CODE, SALES_CODE, data, ComputeKey, date::DateKey, FY};
+use calculator::{Descriptive, Indicator, ComputedIndicator, CASH_CODE, SALES_CODE, data, ComputeKey, date::DateKey, FY, SLC};
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("\nCalcultor is running\n");
@@ -27,12 +27,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 None => value = String::from("None")
             }
         }
-        println!(
-            "input {} {} {} {}", 
-            i.key.date.to_string(),
-            i.key.span.unwrap_or(""),
-            info.indicator().unwrap().default_name(),
-            value);
+        if i.key.span == Some(&FY) || i.key.span == Some(&SLC) {
+            println!(
+                "input {} {} {} {}", 
+                i.key.date.to_string(),
+                i.key.span.unwrap(),
+                info.indicator().unwrap().default_name(),
+                value);
+        }
     }
 
     Ok(())

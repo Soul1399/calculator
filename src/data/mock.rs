@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::date::DateKey;
 use crate::fiscalyear::FiscalYear;
-use crate::{SALES_CODE, CASH_CODE, SLC, NET_DEBT_CODE};
+use crate::{SALES_CODE, CASH_CODE, SLC, NET_DEBT_CODE, FY, EBITDA_CODE, EBITA_CODE};
 use crate::data::IndicatorInputData;
 
 
@@ -35,53 +35,63 @@ pub fn fake_context<'y>() -> Vec<FiscalYear> {
 }
 
 pub fn indicator_data() -> Vec<IndicatorInputData> {
-    let codes = [&SALES_CODE, &CASH_CODE, &NET_DEBT_CODE];
+    let codes = [&SALES_CODE, &EBITDA_CODE, &EBITA_CODE, &CASH_CODE, &NET_DEBT_CODE];
     let mut data: Vec<IndicatorInputData> = vec![];
-    let mut year = 0;
+    let mut year;
     for c in codes {
         year = 2019;
         for m in 3..=8 {
             data.push(build_month_input(c, m, year));
             if m == 5 || m == 8 {
-                data.push(build_slice_input(c, m, year));
+                data.push(build_span_input(c, m, year, Some(&SLC)));
             }
         }
+        data.push(build_span_input(c, 8, year, Some(&FY)));
         for m in 9..=12 {
             data.push(build_month_input(c, m, year));
             if m == 11 {
-                data.push(build_slice_input(c, m, year));
+                data.push(build_span_input(c, m, year, Some(&SLC)));
             }
         }
         year += 1;
         for m in 1..=8 {
             data.push(build_month_input(c, m, year));
             if m == 2 || m == 5 || m == 8 {
-                data.push(build_slice_input(c, m, year));
+                data.push(build_span_input(c, m, year, Some(&SLC)));
             }
         }
+        data.push(build_span_input(c, 8, year, Some(&FY)));
         for m in 9..=12 {
             data.push(build_month_input(c, m, year));
             if m == 11 {
-                data.push(build_slice_input(c, m, year));
+                data.push(build_span_input(c, m, year, Some(&SLC)));
             }
         }
         year += 1;
         for m in 1..=8 {
             data.push(build_month_input(c, m, year));
             if m == 2 || m == 5 || m == 8 {
-                data.push(build_slice_input(c, m, year));
+                data.push(build_span_input(c, m, year, Some(&SLC)));
             }
         }
+        data.push(build_span_input(c, 8, year, Some(&FY)));
     }
     
     data
 }
 
 fn build_month_input(code: &'static isize, month: u8, year: i32) -> IndicatorInputData {
-    let mut float: f64 = rand::random();
+    let float: Option<f64> = rand::random();
     let int: i32 = rand::random();
-    float /= 1000.00;
-    let val = Some(float * int as f64);
+    let val: Option<f64>;
+    match float {
+        Some(f) => {
+            val = Some((f / 1000.00) * int as f64);
+        },
+        None => {
+            val = None;
+        }
+    };
     IndicatorInputData {
         code,
         context: 1, 
@@ -94,12 +104,12 @@ fn build_month_input(code: &'static isize, month: u8, year: i32) -> IndicatorInp
     }
 }
 
-fn build_slice_input(code: &'static isize, month: u8, year: i32) -> IndicatorInputData {
+fn build_span_input(code: &'static isize, month: u8, year: i32, span: Option<&'static str>) -> IndicatorInputData {
     IndicatorInputData {
         code,
         context: 1, 
         author: "Nobody".to_string(),
-        span: Some(&SLC),
+        span: span,
         month,
         year,
         computed: None,

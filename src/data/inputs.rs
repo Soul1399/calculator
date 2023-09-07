@@ -26,7 +26,7 @@ pub fn compute_by_key(inputs: &mut Vec<IndicatorInput>, y: &mut Vec<FiscalYear>,
     };
 
     match span {
-        FY => compute_fullyear(inputs, fy),
+        FY => compute_fy(inputs, fy),
         SLC => compute_slice(inputs, fy, &key.date),
         _ => Err("Unknown span")
     }
@@ -47,14 +47,30 @@ fn prepare_fy(y: &mut Vec<FiscalYear>, key: &ComputeKey) -> Option<Result<(), &'
     None
 }
 
-fn compute_fullyear(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear) -> Result<(), &'static str> {
-    for s in FiscalYear::get_slices(fy) {
-        if let Err(e) = compute_slice(inputs, fy, s.first().unwrap()) {
-            return Err(e);
-        }
+fn compute_fy(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear) -> Result<(), &'static str> {
+    let max_date = fy.max();
+    if let Err(e) = max_date {
+        return Err(e);
+    }
+    if let Some(value) = compute_each_slice(fy, inputs) {
+        return value;
+    }
+
+    if let Err(e) = compute_year(inputs, fy, max_date.unwrap()) {
+        return Err(e);
     }
 
     Ok(())
+}
+
+fn compute_each_slice(fy: &FiscalYear, inputs: &mut Vec<IndicatorInput>) -> Option<Result<(), &'static str>> {
+    for s in FiscalYear::get_slices(fy) {
+        if let Err(e) = compute_slice(inputs, fy, s.first().unwrap()) {
+            return Some(Err(e));
+        }
+    }
+
+    None
 }
 
 fn compute_slice(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear, date: &DateKey) -> Result<(), &'static str> {
@@ -77,7 +93,7 @@ fn compute_slice(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear, date: &DateK
             Some(x) => key = x,
             None => break
         }
-        if let Some(value) = compute_slice_of_indicator(&slice_inputs, key, &config, max_of_slice) {
+        if let Some(value) = compute_slice_of_indicator(&slice_inputs, key, &config,Some(&SLC), None) {
             return value;
         }
         // keep other inputs
@@ -89,7 +105,32 @@ fn compute_slice(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear, date: &DateK
     Ok(())
 }
 
-fn compute_slice_of_indicator(slice_inputs: &Vec<&mut IndicatorInput>, key: &'static isize, config: &HashMap<&'static isize, crate::ComputeMode>, max_of_slice: DateKey) -> Option<Result<(), &'static str>> {
+fn compute_year(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear, max_date: &DateKey) -> Result<(), &'static str> {
+    let mut fy_inputs = extract_fy_inputs(inputs, *max_date);
+    // emulate group by
+    let config = crate::data::get_config();
+    let mut keys:Vec<&'static isize> = fy_inputs.iter().map(|i| i.code).collect();
+    while keys.len() > 0 {
+        // get group key
+        let _k = keys.first();
+        let key: &'static isize;
+        match _k {
+            Some(x) => key = x,
+            None => break
+        }
+        if let Some(value) = compute_slice_of_indicator(&fy_inputs, key, &config, Some(&FY), Some(&SLC)) {
+            return value;
+        }
+        // keep other inputs
+        fy_inputs.retain(|i| i.code != key);
+        // keep other keys (even if they appear multiple times)
+        keys.retain(|x| *x != key);
+    }
+
+    Ok(())
+}
+
+fn compute_slice_of_indicator(slice_inputs: &Vec<&mut IndicatorInput>, key: &'static isize, config: &HashMap<&'static isize, crate::ComputeMode>, target_span: Option<&str>, item_span: Option<&str>) -> Option<Result<(), &'static str>> {
     let indic_inputs: Vec<&&mut IndicatorInput> = slice_inputs.iter()
         .filter(|i| i.code == key)
         .collect();
@@ -97,31 +138,21 @@ fn compute_slice_of_indicator(slice_inputs: &Vec<&mut IndicatorInput>, key: &'st
         return None;
     }
     let computer = indic_inputs.first().unwrap().info(config);
-    let mut slice_input = indic_inputs
+    let target_input = indic_inputs
         .iter()
-        .filter(|&&i| i.key.span == Some(&SLC))
+        .filter(|&&i| i.key.span == target_span)
         .next();
-    match slice_input {
+    match target_input {
         None => {
-            return Some(Err("Missing main slice input"));
+            return Some(Err("Missing target input"));
         },
         _ => {}
     }
-    let input_values = extract_values(&indic_inputs);
-    println!("\nComputing {} in {}", key, max_of_slice.to_string());
+    let input_values = extract_values(&indic_inputs, item_span);
+    
     match computer.compute(&input_values) {
         Ok(x) => {
-            if slice_input.is_none() {
-                slice_input = Some(&&&mut IndicatorInput {
-                    code: key, 
-                    input: RefCell::new(UserInput { author: String::new(), computed: None, inputed: None }),
-                    context: 1,
-                    key: Rc::new(ComputeKey { span: Some(&SLC), date: max_of_slice })
-                });
-            }
-            else {
-                slice_input.map(|val| val.input.borrow_mut().computed = Some(x));
-            }
+            target_input.map(|val| val.input.borrow_mut().computed = Some(x));
         },
         Err(e) => {
             if e.details.len() > 0 {
@@ -129,18 +160,18 @@ fn compute_slice_of_indicator(slice_inputs: &Vec<&mut IndicatorInput>, key: &'st
                 return Some(Err("Compute failed"));
             }
             else {
-                slice_input.map(|val| val.input.borrow_mut().computed = None);
+                target_input.map(|val| val.input.borrow_mut().computed = None);
             }
         }
     }
     None
 }
 
-fn extract_values(indic_inputs: &Vec<&&mut IndicatorInput>) -> Vec<Rc<f64>> {
+fn extract_values(indic_inputs: &Vec<&&mut IndicatorInput>, span: Option<&str>) -> Vec<Rc<f64>> {
     let mut input_values: Vec<Rc<f64>> = Vec::new();
     indic_inputs
         .iter()
-        .filter(|&&i| i.key.span == None)
+        .filter(|&&i| i.key.span == span)
         .for_each(|&i| {
             let mut o = i.input.borrow().inputed;
             if o == None {
@@ -161,6 +192,14 @@ fn extract_slice_inputs(inputs: &mut Vec<IndicatorInput>, slice: Vec<DateKey>) -
         .collect();
 
     slice_inputs
+}
+
+fn extract_fy_inputs(inputs: &mut Vec<IndicatorInput>, date: DateKey) -> Vec<&mut IndicatorInput> {
+    let mut fy_inputs: Vec<_> = inputs.iter_mut()
+        .filter(|i| i.key.span == Some(&FY) && i.key.date == date || i.key.span == Some(&SLC))
+        .collect();
+
+    fy_inputs
 }
 
 #[cfg(test)]
