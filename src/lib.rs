@@ -1,5 +1,5 @@
 
-use std::{error::Error, rc::{Rc, Weak}, cell::RefCell, ops::Add, collections::HashMap};
+use std::{error::Error, rc::{Rc, Weak}, cell::RefCell, collections::HashMap, borrow::Borrow};
 use date::DateKey;
 use enum_iterator::{all, Sequence};
 use fsum::FSum;
@@ -102,13 +102,14 @@ impl std::fmt::Display for ComputeError {
 }
 
 impl<T: Descriptive> ComputedIndicator<T> {
-    pub fn compute(&self, inputs: &Vec<Option<&f64>>) -> Result<f64, ComputeError> {
-        let length = inputs.iter()
-            .filter(|&f| f.is_some()).count();
+    pub fn compute(&self, inputs: &Vec<Rc<f64>>) -> Result<f64, ComputeError> {
+        let length = inputs.len();
+        if length == 0 {
+            return Err(ComputeError { details: String::new() });
+        }
 
         let values = inputs.iter()
-            .filter(|&f| f.is_some())
-            .map(|&f| f.unwrap());
+            .map(|f| f.borrow());
         
         match self {
             Self::AddUp(x) => Ok(FSum::new().add_all(values).value()),
@@ -191,7 +192,7 @@ pub struct IndicatorInput {
 }
 
 impl IndicatorInput {
-    pub fn info(&self, conf: &HashMap<isize, ComputeMode>) -> ComputedIndicator<Indicator> {
+    pub fn info(&self, conf: &HashMap<&'static isize, ComputeMode>) -> ComputedIndicator<Indicator> {
         let idc = Rc::new(Indicator::build(self.context, *self.code));
         match conf.get(self.code) {
             Some(ComputeMode::AddUp) => ComputedIndicator::AddUp(Rc::clone(&idc)),

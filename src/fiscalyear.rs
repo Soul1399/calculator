@@ -1,4 +1,4 @@
-use std::{rc::Rc , collections::HashMap, borrow::BorrowMut};
+use std::{rc::Rc , collections::{HashMap, hash_map}, borrow::BorrowMut};
 
 use crate::date::DateKey;
 
@@ -27,18 +27,17 @@ impl FiscalYear {
             None => Err("Empty year")
         }
     }
-    pub fn get_slice(&mut self, pos: u8, size: Option<u8>) -> Result<Vec<DateKey>, &'static str> {
+    pub fn get_slice(&self, pos: u8, size: Option<u8>) -> Result<Vec<DateKey>, &'static str> {
         if pos < 1 {
             return Err("Invalid position: expected a position greater than zero");
         }
-        self.build_slices(size.unwrap_or(3));
+        
         match self.slices.get(&pos) {
             Some(d) => Ok(d.to_vec()),
             None => Err("Invalid position")
         }
     }
-    pub fn find_slice(&mut self, date: &DateKey, size: Option<u8>) -> Result<Vec<DateKey>, &'static str> {
-        self.build_slices(size.unwrap_or(3));
+    pub fn find_slice(&self, date: &DateKey, size: Option<u8>) -> Result<Vec<DateKey>, &'static str> {
         let slice = self.slices.iter()
             .filter(|x| x.1.iter().any(|d| d == date))
             .map(|x| x.1)
@@ -58,7 +57,7 @@ impl FiscalYear {
         }
     }
 
-    fn build_slices(&mut self, size: u8) {
+    pub fn build_slices(&mut self, size: u8) {
         if self.slices.len() > 0 {
             return;
         }
@@ -70,6 +69,10 @@ impl FiscalYear {
             x += 1;
             self.slices.insert(x, chunk.to_vec());
         }
+    }
+
+    pub fn get_slices(fy: &Self) -> Vec<&Vec<DateKey>> {
+        fy.slices.iter().map(|s| s.1).collect()
     }
 }
 

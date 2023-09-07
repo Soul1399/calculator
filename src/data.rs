@@ -3,7 +3,7 @@ use std::{collections::HashMap, rc::Rc, cell::RefCell};
 
 use self::mock::indicator_data;
 
-pub fn get_indicators() -> Vec<IndicatorInput> {
+pub fn get_all_inputs() -> Vec<IndicatorInput> {
     build_inputs(indicator_data())
 }
 
@@ -27,13 +27,13 @@ fn build_input(input: &IndicatorInputData) -> IndicatorInput {
     }
 }
 
-pub fn get_config() -> HashMap<isize, ComputeMode> {
+pub fn get_config() -> HashMap<&'static isize, ComputeMode> {
     let mut config = HashMap::new();
-    config.insert(SALES_CODE, ComputeMode::AddUp);
-    config.insert(EBITDA_CODE, ComputeMode::AddUp);
-    config.insert(EBITA_CODE, ComputeMode::AddUp);
-    config.insert(CASH_CODE, ComputeMode::Default);
-    config.insert(NET_DEBT_CODE, ComputeMode::Default);
+    config.insert(&SALES_CODE, ComputeMode::AddUp);
+    config.insert(&EBITDA_CODE, ComputeMode::AddUp);
+    config.insert(&EBITA_CODE, ComputeMode::AddUp);
+    config.insert(&CASH_CODE, ComputeMode::Default);
+    config.insert(&NET_DEBT_CODE, ComputeMode::Default);
     config
 }
 

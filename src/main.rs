@@ -1,39 +1,40 @@
 
 use std::{error::Error, rc::Rc};
-use calculator::{Descriptive, Indicator, ComputedIndicator, CASH_CODE, SALES_CODE, data};
+use calculator::{Descriptive, Indicator, ComputedIndicator, CASH_CODE, SALES_CODE, data, ComputeKey, date::DateKey, FY};
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("\nCalcultor is running\n");
     
-    let context = data::load_context(1);
+    let mut context = data::load_context(1);
+    let config = crate::data::get_config();
+    let mut list = data::get_all_inputs();
 
-    // context.iter().for_each(|fy| {
-    //     match fy.get_quarter(2) {
-    //         Ok(x) => println!("{}", x.to_string()),
-    //         Err(e) => println!("Error: {}", e)
-    //     };
-    // });
+    // for y in context {
+    //     println!("fiscal year {} - {}", y.min().unwrap().to_string(), y.max().unwrap().to_string());
+    // }
 
-    let list = data::get_indicators();
+    let key = ComputeKey { date: DateKey::build(8, 2020), span: Some(&FY) };
 
-    // list.iter().for_each(|x| println!("Indicator: {}", x.indic.indicator().unwrap().default_name()));
-    // list.iter().for_each(|x| println!("{}", x.key.span.unwrap_or_default()));
+    data::inputs::compute_by_key(&mut list, &mut context, &key)?;
 
-    Ok(())
-}
+    for i in list {
+        let info = i.info(&config);
+        let value: String;
+        match i.input.borrow().inputed {
+            Some(f) => value = f.to_string(),
+            None => match i.input.borrow().computed {
+                Some(f) => value = f.to_string(),
+                None => value = String::from("None")
+            }
+        }
+        println!(
+            "input {} {} {} {}", 
+            i.key.date.to_string(),
+            i.key.span.unwrap_or(""),
+            info.indicator().unwrap().default_name(),
+            value);
+    }
 
-fn test1(inputs: Vec<Option<&f64>>) -> Result<(), Box<dyn Error>> {
-    let sales = Indicator::build(1, SALES_CODE);
-    let cash = Indicator::build(1, CASH_CODE);
-    let name = sales.default_name();
-    println!("{name}");
-    let add_up = ComputedIndicator::AddUp(Rc::new(sales));
-    let nadd_up = ComputedIndicator::Default(Rc::new(cash));
-    let result = add_up.compute(&inputs)?;
-    
-    println!("Total {} {result}", add_up.indicator().unwrap_or_default().default_name());
-    let result = nadd_up.compute(&inputs)?;
-    println!("Total {} {result}", nadd_up.indicator().unwrap_or_default().default_name());
     Ok(())
 }
 
