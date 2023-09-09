@@ -3,6 +3,7 @@ use std::{rc::Rc, cell::RefCell, collections::HashMap};
 use enum_iterator::{Sequence, all};
 use fsum::FSum;
 use rand::distributions::uniform::SampleBorrow;
+use strum_macros::FromRepr;
 
 use crate::{Descriptive, ComputeError, data::inputs::UserInput, ComputeKey};
 
@@ -17,13 +18,14 @@ pub const LTM: &str = "Last Twelve Months";
 pub const SLC: &str = "Slice";
 
 #[repr(isize)]
-#[derive(Debug, PartialEq, Sequence)]
+#[derive(Debug, PartialEq, Sequence, strum_macros::Display, FromRepr)]
 pub enum IndicatorName {
     None = 0,
     Sales = SALES_CODE,
-    Ebitda = EBITDA_CODE,
-    Ebita = EBITA_CODE,
+    EBITDA = EBITDA_CODE,
+    EBITA = EBITA_CODE,
     Cash = CASH_CODE,
+    #[strum(serialize="Net Debt")]
     NetDebt = NET_DEBT_CODE
 }
 
@@ -33,45 +35,25 @@ impl Default for IndicatorName {
     }
 }
 
-impl ToString for IndicatorName {
-    fn to_string(&self) -> String {
-        match self {
-            IndicatorName::Sales => "Sales".to_string(),
-            IndicatorName::Ebitda => "EBITDA".to_string(),
-            IndicatorName::Ebita => "EBITA".to_string(),
-            IndicatorName::Cash => "Cash".to_string(),
-            IndicatorName::NetDebt => "Net Debt".to_string(),
-            _ => {
-                panic!("Impossible value of IndicatorName")
-            }
-        }
-    }
-}
-
-impl IndicatorName {
-    fn discriminant(&self) -> isize {
-        unsafe { *(self as *const Self as *const isize) }
-    }
-}
+// TECHNIQUE TO GET repr of isize
+// impl IndicatorName {
+//     fn discriminant(&self) -> isize {
+//         unsafe { *(self as *const Self as *const isize) }
+//     }
+// }
 
 
-impl From<isize> for IndicatorName {
-    fn from(value: isize) -> Self {
-        for i in all::<IndicatorName>() {
-            if i.discriminant() == value {
-                return i;
-            }
-        }
-        IndicatorName::default()
-    }
-}
-
-#[repr(isize)]
-pub enum ComputeMode {
+#[derive(Debug, Clone)]
+pub enum ComputerMode {
     Default,
     AddUp,
     Avg,
-    Complex
+    Complex(fn(Vec<ComputeItem>) -> f64)
+}
+
+pub struct ComputeItem {
+    pub code: String,
+    pub value: Box<f64>
 }
 
 pub enum ComputedIndicator<T: Descriptive> {
@@ -79,6 +61,25 @@ pub enum ComputedIndicator<T: Descriptive> {
     AddUp(Rc<T>),
     Avg(Rc<T>),
     Complex(Rc<T>)
+}
+
+impl ComputerMode {
+    pub fn compute(&self, inputs: &Vec<Box<f64>>) -> Result<f64, ComputeError> {
+        let length = inputs.len();
+        if length == 0 {
+            return Err(ComputeError { details: String::new() });
+        }
+
+        let values = inputs.iter()
+            .map(|f| f.as_ref());
+        
+        match self {
+            Self::Default => Ok(*values.last().unwrap()),
+            Self::AddUp => Ok(FSum::new().add_all(values).value()),
+            Self::Avg => { Ok(FSum::new().add_all(values).value() / length as f64) },
+            _ => Err(ComputeError { details: "Unable to compute this indicator".to_string() })
+        }
+    }
 }
 
 impl<T: Descriptive> ComputedIndicator<T> {
@@ -122,8 +123,8 @@ impl Default for BaseIndicator {
 
 impl Descriptive for BaseIndicator {
     fn default_name(&self) -> String {
-        let i = IndicatorName::from(self.code);
-        i.to_string()
+        let i = IndicatorName::from_repr(self.code);
+        i.unwrap_or_default().to_string()
     }
 
     fn name(&self) -> String {
@@ -134,18 +135,18 @@ impl Descriptive for BaseIndicator {
 #[derive(Debug)]
 pub struct Indicator {
     context: isize,
-    base: Rc<BaseIndicator>,
+    base: BaseIndicator,
 }
 
 impl Default for Indicator {
     fn default() -> Self {
-        Self { context: Default::default(), base: Rc::default() }
+        Self { context: Default::default(), base: BaseIndicator { code: Default::default() } }
     }
 }
 
 impl Indicator {
     pub fn build(context: isize, code: isize) -> Self {
-        Indicator { context, base: Rc::new(BaseIndicator { code }) } 
+        Indicator { context, base: BaseIndicator { code } } 
     }
 
     pub fn get_code(&self) -> isize {
@@ -171,13 +172,24 @@ pub struct IndicatorInput {
 }
 
 impl IndicatorInput {
-    pub fn get_computer(&self, conf: &HashMap<&'static isize, ComputeMode>) -> ComputedIndicator<Indicator> {
-        let idc = Rc::new(Indicator::build(self.context, *self.code));
+    pub fn get_indicator(&self) -> Indicator {
+        Indicator::build(self.context, *self.code)
+    }
+    
+    // pub fn get_computer(&self, conf: &HashMap<&'static isize, ComputerMode>) -> ComputedIndicator<Indicator> {
+    //     let idc = Rc::new(Indicator::build(self.context, *self.code));
+    //     match conf.get(self.code) {
+    //         Some(ComputerMode::AddUp) => ComputedIndicator::AddUp(Rc::clone(&idc)),
+    //         Some(ComputerMode::Default) => ComputedIndicator::Default(Rc::clone(&idc)),
+    //         Some(ComputerMode::Avg) => ComputedIndicator::Avg(Rc::clone(&idc)),
+    //         //Some(ComputeMode::Complex) => ComputedIndicator::Complex(Rc::clone(&idc)),
+    //         None => panic!("Input was undefined")
+    //     }
+    // }
+
+    pub fn get_computer<'a>(&self, conf: &'a HashMap<&'static isize, ComputerMode>) -> &'a ComputerMode {
         match conf.get(self.code) {
-            Some(ComputeMode::AddUp) => ComputedIndicator::AddUp(Rc::clone(&idc)),
-            Some(ComputeMode::Default) => ComputedIndicator::Default(Rc::clone(&idc)),
-            Some(ComputeMode::Avg) => ComputedIndicator::Avg(Rc::clone(&idc)),
-            Some(ComputeMode::Complex) => ComputedIndicator::Complex(Rc::clone(&idc)),
+            Some(c) => c,
             None => panic!("Input was undefined")
         }
     }

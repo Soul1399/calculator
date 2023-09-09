@@ -3,11 +3,16 @@ use std::error::Error;
 
 use calculator::{data, fiscalyear::FiscalYear, indic::{SLC, FY}, Descriptive};
 
+
 fn main() -> Result<(), Box<dyn Error>> {
+    return compute_sample();
+}
+
+
+fn compute_sample() -> Result<(), Box<dyn Error>> {
     println!("\nCalcultor is running");
     println!();
     let mut context = data::load_context(1);
-    let config = crate::data::get_config();
     let mut list = data::get_all_inputs();
     let compute_keys = FiscalYear::get_keys(&context);
 
@@ -18,7 +23,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!();
     for i in list {
-        let info = i.get_computer(&config);
         let value: String;
         match i.input.borrow().inputed {
             Some(f) => value = f.to_string(),
@@ -32,11 +36,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "\nInput: {} {} {} {}", 
                 i.key.date.to_string(),
                 i.key.span.unwrap(),
-                info.indicator().unwrap().default_name(),
+                i.get_indicator().default_name(),
                 value);
         }
     }
 
     Ok(())
 }
-

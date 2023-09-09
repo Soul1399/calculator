@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc, cell::RefCell};
 
-use crate::{indic::{IndicatorInput, ComputeMode, SALES_CODE, EBITDA_CODE, EBITA_CODE, CASH_CODE, NET_DEBT_CODE}, fiscalyear::FiscalYear, ComputeKey, date::DateKey};
+use crate::{indic::{IndicatorInput, ComputerMode, SALES_CODE, EBITDA_CODE, EBITA_CODE, CASH_CODE, NET_DEBT_CODE}, fiscalyear::FiscalYear, ComputeKey, date::DateKey};
 
 use self::{mock::indicator_data, inputs::UserInput};
 
@@ -28,13 +28,13 @@ fn build_input(input: &IndicatorInputData) -> IndicatorInput {
     }
 }
 
-pub fn get_config() -> HashMap<&'static isize, ComputeMode> {
+pub fn get_config() -> HashMap<&'static isize, ComputerMode> {
     let mut config = HashMap::new();
-    config.insert(&SALES_CODE, ComputeMode::AddUp);
-    config.insert(&EBITDA_CODE, ComputeMode::AddUp);
-    config.insert(&EBITA_CODE, ComputeMode::AddUp);
-    config.insert(&CASH_CODE, ComputeMode::Default);
-    config.insert(&NET_DEBT_CODE, ComputeMode::Default);
+    config.insert(&SALES_CODE, ComputerMode::AddUp);
+    config.insert(&EBITDA_CODE, ComputerMode::AddUp);
+    config.insert(&EBITA_CODE, ComputerMode::AddUp);
+    config.insert(&CASH_CODE, ComputerMode::Default);
+    config.insert(&NET_DEBT_CODE, ComputerMode::Default);
     config
 }
 

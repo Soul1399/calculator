@@ -1,7 +1,7 @@
 
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{indic::{IndicatorInput, FY, SLC, ComputeMode}, ComputeKey, fiscalyear::FiscalYear, date::DateKey};
+use crate::{indic::{IndicatorInput, FY, SLC, ComputerMode}, ComputeKey, fiscalyear::FiscalYear, date::DateKey};
 
 pub struct UserInput {
     pub inputed: Option<f64>,
@@ -92,7 +92,6 @@ fn compute_slice(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear, date: &DateK
     }
     let mut slice_inputs = extract_inputs(inputs, slice, span, child_span);
     // emulate group by
-    let config = crate::data::get_config();
     let mut keys:Vec<&'static isize> = slice_inputs.iter().map(|i| i.code).collect();
     while keys.len() > 0 {
         // get group key
@@ -102,7 +101,7 @@ fn compute_slice(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear, date: &DateK
             Some(x) => key = x,
             None => break
         }
-        if let Some(value) = compute_slice_of_indicator(&slice_inputs, key, &config,span, child_span) {
+        if let Some(value) = compute_slice_of_indicator(&slice_inputs, key,span, child_span) {
             return value;
         }
         // keep other inputs
@@ -114,14 +113,15 @@ fn compute_slice(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear, date: &DateK
     Ok(())
 }
 
-fn compute_slice_of_indicator(slice_inputs: &Vec<&mut IndicatorInput>, key: &'static isize, config: &HashMap<&'static isize, ComputeMode>, target_span: Option<&str>, item_span: Option<&str>) -> Option<Result<(), &'static str>> {
+fn compute_slice_of_indicator(slice_inputs: &Vec<&mut IndicatorInput>, key: &'static isize, target_span: Option<&str>, item_span: Option<&str>) -> Option<Result<(), &'static str>> {
+    let config = crate::data::get_config();
     let indic_inputs: Vec<&&mut IndicatorInput> = slice_inputs.iter()
         .filter(|i| i.code == key)
         .collect();
     if indic_inputs.len() == 0 {
         return None;
     }
-    let computer = indic_inputs.first().unwrap().get_computer(config);
+    let computer = indic_inputs.first().unwrap().get_computer(&config);
     let target_input = indic_inputs
         .iter()
         .filter(|&&i| i.key.span == target_span)
@@ -151,8 +151,8 @@ fn compute_slice_of_indicator(slice_inputs: &Vec<&mut IndicatorInput>, key: &'st
     None
 }
 
-fn extract_values(indic_inputs: &Vec<&&mut IndicatorInput>, span: Option<&str>) -> Vec<Rc<f64>> {
-    let mut input_values: Vec<Rc<f64>> = Vec::new();
+fn extract_values(indic_inputs: &Vec<&&mut IndicatorInput>, span: Option<&str>) -> Vec<Box<f64>> {
+    let mut input_values: Vec<Box<f64>> = Vec::new();
     indic_inputs
         .iter()
         .filter(|&&i| i.key.span == span)
@@ -162,7 +162,7 @@ fn extract_values(indic_inputs: &Vec<&&mut IndicatorInput>, span: Option<&str>) 
                 o = i.input.borrow().computed;
             }
             match o {
-                Some(f) => input_values.push(Rc::new(f)),
+                Some(f) => input_values.push(Box::new(f)),
                 None => {}
             }
         });

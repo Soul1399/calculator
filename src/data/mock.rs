@@ -82,11 +82,13 @@ pub fn indicator_data() -> Vec<IndicatorInputData> {
 
 pub fn build_month_input(code: &'static isize, month: u8, year: i32) -> IndicatorInputData {
     let float: Option<f64> = rand::random();
-    let int: i32 = rand::random();
+    let int16: i16 = rand::random();
+    let int8: i8 = rand::random();
+    let small: bool = rand::random();
     let val: Option<f64>;
     match float {
         Some(f) => {
-            val = Some((f / 1000.00) * int as f64);
+            val = Some(f * (if small { int8 as f64 } else { int16 as f64 }));
         },
         None => {
             val = None;
