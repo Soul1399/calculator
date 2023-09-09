@@ -1,3 +1,4 @@
+use std::rc::Rc;
 
 
 pub fn is_between<'a, T>(value: &'a T, min: Option<&'a T>, max: Option<&'a T>) -> Result<Option<bool>, &'static str> where T: PartialOrd + Default {
@@ -10,7 +11,7 @@ pub fn is_between<'a, T>(value: &'a T, min: Option<&'a T>, max: Option<&'a T>) -
     Ok(Some(a < value && value < b))
 }
 
-pub fn is_between_copy<T>(value: Box<T>, min: T, max: T) -> bool where T: PartialOrd {
+pub fn is_between_copy<T>(value: Rc<T>, min: T, max: T) -> bool where T: PartialOrd {
     min < *value && *value < max
 }
 

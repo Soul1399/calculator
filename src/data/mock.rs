@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::date::DateKey;
 use crate::fiscalyear::FiscalYear;
-use crate::{SALES_CODE, CASH_CODE, SLC, NET_DEBT_CODE, FY, EBITDA_CODE, EBITA_CODE};
+use crate::indic::{SALES_CODE, CASH_CODE, SLC, NET_DEBT_CODE, FY, EBITDA_CODE, EBITA_CODE};
 use crate::data::IndicatorInputData;
 
 
@@ -80,7 +80,7 @@ pub fn indicator_data() -> Vec<IndicatorInputData> {
     data
 }
 
-fn build_month_input(code: &'static isize, month: u8, year: i32) -> IndicatorInputData {
+pub fn build_month_input(code: &'static isize, month: u8, year: i32) -> IndicatorInputData {
     let float: Option<f64> = rand::random();
     let int: i32 = rand::random();
     let val: Option<f64>;
@@ -104,7 +104,7 @@ fn build_month_input(code: &'static isize, month: u8, year: i32) -> IndicatorInp
     }
 }
 
-fn build_span_input(code: &'static isize, month: u8, year: i32, span: Option<&'static str>) -> IndicatorInputData {
+pub fn build_span_input(code: &'static isize, month: u8, year: i32, span: Option<&'static str>) -> IndicatorInputData {
     IndicatorInputData {
         code,
         context: 1, 

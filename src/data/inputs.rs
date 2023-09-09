@@ -1,7 +1,13 @@
 
-use std::{collections::HashMap, rc::Rc, cell::RefCell, borrow::BorrowMut};
+use std::{collections::HashMap, rc::Rc};
 
-use crate::{ComputeKey, IndicatorInput, fiscalyear::FiscalYear, FY, date::DateKey, SLC, UserInput};
+use crate::{indic::{IndicatorInput, FY, SLC, ComputeMode}, ComputeKey, fiscalyear::FiscalYear, date::DateKey};
+
+pub struct UserInput {
+    pub inputed: Option<f64>,
+    pub computed: Option<f64>,
+    pub author: String
+}
 
 pub fn compute_by_key(inputs: &mut Vec<IndicatorInput>, y: &mut Vec<FiscalYear>, key: &ComputeKey) -> Result<(), &'static str> {
     if inputs.len() == 0 {
@@ -27,7 +33,7 @@ pub fn compute_by_key(inputs: &mut Vec<IndicatorInput>, y: &mut Vec<FiscalYear>,
 
     match span {
         FY => compute_fy(inputs, fy),
-        SLC => compute_slice(inputs, fy, &key.date),
+        SLC => compute_slice(inputs, fy, &key.date, Some(&SLC), None),
         _ => Err("Unknown span")
     }
 }
@@ -56,7 +62,7 @@ fn compute_fy(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear) -> Result<(), &
         return value;
     }
 
-    if let Err(e) = compute_year(inputs, fy, max_date.unwrap()) {
+    if let Err(e) = compute_slice(inputs, fy, max_date.unwrap(), Some(&FY), Some(&SLC)) {
         return Err(e);
     }
 
@@ -65,7 +71,7 @@ fn compute_fy(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear) -> Result<(), &
 
 fn compute_each_slice(fy: &FiscalYear, inputs: &mut Vec<IndicatorInput>) -> Option<Result<(), &'static str>> {
     for s in FiscalYear::get_slices(fy) {
-        if let Err(e) = compute_slice(inputs, fy, s.first().unwrap()) {
+        if let Err(e) = compute_slice(inputs, fy, s.first().unwrap(), Some(&SLC), None) {
             return Some(Err(e));
         }
     }
@@ -73,15 +79,18 @@ fn compute_each_slice(fy: &FiscalYear, inputs: &mut Vec<IndicatorInput>) -> Opti
     None
 }
 
-fn compute_slice(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear, date: &DateKey) -> Result<(), &'static str> {
+fn compute_slice(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear, date: &DateKey, span: Option<&str>, child_span: Option<&str>) -> Result<(), &'static str> {
     let slice: Vec<DateKey>;
-    match fy.find_slice(date, None) {
-        Ok(s) => slice = s,
-        Err(e) => return Err(e)
-    };
-    
-    let max_of_slice = *slice.iter().max().unwrap();
-    let mut slice_inputs = extract_slice_inputs(inputs, slice);
+    if span == Some(&FY) {
+        slice = fy.get_months();
+    }
+    else {
+        match fy.find_slice(date) {
+            Ok(s) => slice = s,
+            Err(e) => return Err(e)
+        };
+    }
+    let mut slice_inputs = extract_inputs(inputs, slice, span, child_span);
     // emulate group by
     let config = crate::data::get_config();
     let mut keys:Vec<&'static isize> = slice_inputs.iter().map(|i| i.code).collect();
@@ -93,7 +102,7 @@ fn compute_slice(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear, date: &DateK
             Some(x) => key = x,
             None => break
         }
-        if let Some(value) = compute_slice_of_indicator(&slice_inputs, key, &config,Some(&SLC), None) {
+        if let Some(value) = compute_slice_of_indicator(&slice_inputs, key, &config,span, child_span) {
             return value;
         }
         // keep other inputs
@@ -105,39 +114,14 @@ fn compute_slice(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear, date: &DateK
     Ok(())
 }
 
-fn compute_year(inputs: &mut Vec<IndicatorInput>, fy: &FiscalYear, max_date: &DateKey) -> Result<(), &'static str> {
-    let mut fy_inputs = extract_fy_inputs(inputs, *max_date);
-    // emulate group by
-    let config = crate::data::get_config();
-    let mut keys:Vec<&'static isize> = fy_inputs.iter().map(|i| i.code).collect();
-    while keys.len() > 0 {
-        // get group key
-        let _k = keys.first();
-        let key: &'static isize;
-        match _k {
-            Some(x) => key = x,
-            None => break
-        }
-        if let Some(value) = compute_slice_of_indicator(&fy_inputs, key, &config, Some(&FY), Some(&SLC)) {
-            return value;
-        }
-        // keep other inputs
-        fy_inputs.retain(|i| i.code != key);
-        // keep other keys (even if they appear multiple times)
-        keys.retain(|x| *x != key);
-    }
-
-    Ok(())
-}
-
-fn compute_slice_of_indicator(slice_inputs: &Vec<&mut IndicatorInput>, key: &'static isize, config: &HashMap<&'static isize, crate::ComputeMode>, target_span: Option<&str>, item_span: Option<&str>) -> Option<Result<(), &'static str>> {
+fn compute_slice_of_indicator(slice_inputs: &Vec<&mut IndicatorInput>, key: &'static isize, config: &HashMap<&'static isize, ComputeMode>, target_span: Option<&str>, item_span: Option<&str>) -> Option<Result<(), &'static str>> {
     let indic_inputs: Vec<&&mut IndicatorInput> = slice_inputs.iter()
         .filter(|i| i.code == key)
         .collect();
     if indic_inputs.len() == 0 {
         return None;
     }
-    let computer = indic_inputs.first().unwrap().info(config);
+    let computer = indic_inputs.first().unwrap().get_computer(config);
     let target_input = indic_inputs
         .iter()
         .filter(|&&i| i.key.span == target_span)
@@ -185,26 +169,19 @@ fn extract_values(indic_inputs: &Vec<&&mut IndicatorInput>, span: Option<&str>) 
     input_values
 }
 
-fn extract_slice_inputs(inputs: &mut Vec<IndicatorInput>, slice: Vec<DateKey>) -> Vec<&mut IndicatorInput> {
-    let mut slice_inputs: Vec<_> = inputs.iter_mut()
-        .filter(|i| i.key.span == Some(&SLC) || i.key.span == None)
+fn extract_inputs<'a>(inputs: &'a mut Vec<IndicatorInput>, slice: Vec<DateKey>, parent_span: Option<&str>, child_span: Option<&str>) -> Vec<&'a mut IndicatorInput> {
+    let slice_inputs: Vec<_> = inputs.iter_mut()
+        .filter(|i| i.key.span == parent_span || i.key.span == child_span)
         .filter(|i| slice.iter().any(|d| i.key.date == *d))
         .collect();
 
     slice_inputs
 }
 
-fn extract_fy_inputs(inputs: &mut Vec<IndicatorInput>, date: DateKey) -> Vec<&mut IndicatorInput> {
-    let mut fy_inputs: Vec<_> = inputs.iter_mut()
-        .filter(|i| i.key.span == Some(&FY) && i.key.date == date || i.key.span == Some(&SLC))
-        .collect();
-
-    fy_inputs
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::{ComputeKey, FY, IndicatorInput, date::DateKey, fiscalyear::FiscalYear};
+    use crate::{data::{mock, build_inputs}, indic::{SALES_CODE, CASH_CODE}};
+
     use super::*;
 
     #[test]
@@ -226,5 +203,30 @@ mod tests {
             Err(e) => panic!("{e}"),
             _ => {}
         };
+    }
+
+    #[test]
+    fn extract_inputs_fy() {
+        let data_inputs = vec![
+            mock::build_span_input(&SALES_CODE, 12, 2023, Some(&FY)),
+            mock::build_span_input(&SALES_CODE, 3, 2023, Some(&SLC)),
+            mock::build_month_input(&SALES_CODE, 3, 2023),
+            mock::build_month_input(&SALES_CODE, 2, 2023),
+            mock::build_span_input(&CASH_CODE, 12, 2023, Some(&FY)),
+            mock::build_span_input(&CASH_CODE, 3, 2023, Some(&SLC)),
+            mock::build_month_input(&CASH_CODE, 3, 2023),
+            mock::build_month_input(&CASH_CODE, 2, 2023),
+            mock::build_span_input(&CASH_CODE, 12, 2024, Some(&FY)),
+            mock::build_span_input(&CASH_CODE, 3, 2024, Some(&SLC)),
+            mock::build_month_input(&CASH_CODE, 3, 2024),
+            mock::build_month_input(&CASH_CODE, 2, 2024)
+        ];
+        let mut inputs = build_inputs(data_inputs);
+        let slice = (1..13).into_iter().map(|m| DateKey::build(m as u8, 2023)).collect();
+        let extracted_inputs = extract_inputs(&mut inputs, slice, Some(&FY), Some(&SLC));
+        assert!(extracted_inputs.len() == 4);
+        assert!(!extracted_inputs.iter().any(|i| i.key.span == None));
+        assert_eq!(extracted_inputs.iter().filter(|i| i.key.span == Some(&FY)).count(), 2);
+        assert_eq!(extracted_inputs.iter().filter(|i| i.key.span == Some(&SLC)).count(), 2);
     }
 }

@@ -1,24 +1,24 @@
 
-use std::{error::Error, rc::Rc};
-use calculator::{Descriptive, Indicator, ComputedIndicator, CASH_CODE, SALES_CODE, data, ComputeKey, date::DateKey, FY, SLC};
+use std::error::Error;
+
+use calculator::{data, fiscalyear::FiscalYear, indic::{SLC, FY}, Descriptive};
 
 fn main() -> Result<(), Box<dyn Error>> {
-    println!("\nCalcultor is running\n");
-    
+    println!("\nCalcultor is running");
+    println!();
     let mut context = data::load_context(1);
     let config = crate::data::get_config();
     let mut list = data::get_all_inputs();
+    let compute_keys = FiscalYear::get_keys(&context);
 
-    // for y in context {
-    //     println!("fiscal year {} - {}", y.min().unwrap().to_string(), y.max().unwrap().to_string());
-    // }
+    for k in compute_keys {
+        println!("\nComputing fiscal year {}", k.date.to_string());
+        data::inputs::compute_by_key(&mut list, &mut context, &k)?;
+    }
 
-    let key = ComputeKey { date: DateKey::build(8, 2020), span: Some(&FY) };
-
-    data::inputs::compute_by_key(&mut list, &mut context, &key)?;
-
+    println!();
     for i in list {
-        let info = i.info(&config);
+        let info = i.get_computer(&config);
         let value: String;
         match i.input.borrow().inputed {
             Some(f) => value = f.to_string(),
@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         if i.key.span == Some(&FY) || i.key.span == Some(&SLC) {
             println!(
-                "input {} {} {} {}", 
+                "\nInput: {} {} {} {}", 
                 i.key.date.to_string(),
                 i.key.span.unwrap(),
                 info.indicator().unwrap().default_name(),

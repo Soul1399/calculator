@@ -1,7 +1,8 @@
-use crate::{ComputedIndicator, Indicator, SALES_CODE, ComputeMode, NET_DEBT_CODE, CASH_CODE, EBITA_CODE, EBITDA_CODE, IndicatorInput, UserInput, ComputeKey, DateKey, fiscalyear::FiscalYear};
 use std::{collections::HashMap, rc::Rc, cell::RefCell};
 
-use self::mock::indicator_data;
+use crate::{indic::{IndicatorInput, ComputeMode, SALES_CODE, EBITDA_CODE, EBITA_CODE, CASH_CODE, NET_DEBT_CODE}, fiscalyear::FiscalYear, ComputeKey, date::DateKey};
+
+use self::{mock::indicator_data, inputs::UserInput};
 
 pub fn get_all_inputs() -> Vec<IndicatorInput> {
     build_inputs(indicator_data())
