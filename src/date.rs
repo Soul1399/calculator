@@ -34,21 +34,30 @@ impl DateKey {
     }
 
     pub fn add_months(&mut self, n: i32) {
-        if n % 12 == 0 {
+        if n == 0 {
+            return;
+        }
+        let mut new_m: i32 = 0;
+        if let 1..=11 = n.abs() {
+            new_m = (self.month as i32) + n;
+        }
+        else if n % 12 == 0 {
+            new_m = self.month as i32;
             self.year += n / 12;
         }
         else {
             self.year += f32::trunc((n / 12) as f32) as i32;
-            let m = (self.month as i32) + n % 12;
-            if m < 1 {
-                self.month = 12 + m as u8;
-                self.year -= 1;
-            }
-            else if m < 12 {
-                self.month = m as u8 - 12;
-                self.year += 1;
-            }
+            new_m = (self.month as i32) + n % 12;
         }
+        if new_m < 1 {
+            new_m = 12 + new_m;
+            self.year -= 1;
+        }
+        else if new_m > 12 {
+            new_m = new_m - 12;
+            self.year += 1;
+        }
+        self.month = new_m as u8;
     }
 }
 
@@ -118,3 +127,38 @@ impl Ord for DateKey {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[should_panic(expected = "Month has to be between 1 and 12")]
+    fn apply_invalid() {
+        let d = DateKey::build(40, 2000);
+    }
+
+    #[test]
+    fn add_months() {
+        let mut d = DateKey::build(1, 2000);
+        d.add_months(-12);
+        assert_eq!(d.month, 1);
+        assert_eq!(d.year, 1999);
+
+        d.add_months(3);
+        assert_eq!(d.month, 4);
+        assert_eq!(d.year, 1999);
+
+        d.add_months(11);
+        assert_eq!(d.month, 3);
+        assert_eq!(d.year, 2000);
+
+        d.add_months(-100);
+        assert_eq!(d.month, 11);
+        assert_eq!(d.year, 1991);
+
+        d.add_months(120);
+        assert_eq!(d.month, 11);
+        assert_eq!(d.year, 2001);
+    }
+}

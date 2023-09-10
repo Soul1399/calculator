@@ -24,6 +24,7 @@ fn build_input(input: &IndicatorInputData) -> IndicatorInput {
         context: input.context,
         code: input.code,
         input: RefCell::new(UserInput { inputed: input.inputed, computed: input.computed, author: input.author.to_string() }),
+        ltm: RefCell::new(Default::default()),
         key: Rc::new(ComputeKey { date: dt, span: input.span })
     }
 }
@@ -49,5 +50,6 @@ pub struct IndicatorInputData {
     pub author: String
 }
 
+pub mod monitoring;
 pub mod inputs;
 pub mod mock;
