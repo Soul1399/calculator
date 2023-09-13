@@ -1,7 +1,7 @@
 
 use std::error::Error;
 
-use calculator::{data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{SLC, FY}, Descriptive};
+use calculator::{data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{SLC, FY, LTM}, Descriptive};
 
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -23,13 +23,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                 None => value = String::from("None")
             }
         }
-        if i.key.span == Some(&FY) || i.key.span == Some(&SLC) {
+        let ltm: String = match *i.ltm.borrow() {
+            Some(f) => f.to_string(),
+            None => if i.key.span == None { String::from("None") } else { String::from("N/A") }
+        };
+        if i.key.span == Some(&FY) || i.key.span == Some(&SLC) || i.key.span == None && ltm != "" {
             println!(
-                "\nInput: {} {} {} {}", 
+                "\nInput: {} {} {} {} (ltm {})", 
                 i.key.date.to_string(),
-                i.key.span.unwrap(),
+                i.key.span.unwrap_or("None"),
                 i.get_indicator().default_name(),
-                value);
+                value,
+                ltm);
         }
     }
 

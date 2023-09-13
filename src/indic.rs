@@ -148,4 +148,14 @@ impl IndicatorInput {
             None => panic!("Input was undefined")
         }
     }
+
+    pub fn get_value(&self) -> Option<f64> {
+        if let Some(_) = self.input.borrow().inputed {
+            return self.input.borrow().inputed;
+        }
+        if let Some(_) = self.input.borrow().computed {
+            return self.input.borrow().computed;
+        }
+        None
+    }
 }

@@ -1,5 +1,5 @@
 
-use crate::{fiscalyear::FiscalYear, indic::{IndicatorInput, SLC, FY, LTM}, ComputeError, ComputeKey, date::DateKey};
+use crate::{fiscalyear::FiscalYear, indic::{IndicatorInput, SLC, FY, LTM, ComputerMode}, ComputeError, ComputeKey, date::DateKey};
 use super::inputs::InputContext;
 
 
@@ -26,7 +26,7 @@ impl InputMonitoring {
         let compute_keys = FiscalYear::get_keys(&self.years);
 
         for k in compute_keys {
-            println!("\nComputing fiscal year {}", k.date.to_string());
+            println!("\nComputing {} {}", k.span.unwrap_or("month"), k.date.to_string());
             if let Err(e) = self.compute_by_key(inputs, &k) {
                 let mut message = String::from("Unable to compute fiscal year ");
                 message.push_str(&k.date.to_string()[..]);
@@ -184,16 +184,13 @@ impl InputMonitoring {
     }
 
     fn compute_ltm_of_indicator(&self, slice_inputs: &Vec<&mut IndicatorInput>, date: &DateKey, code: &'static isize) -> Option<Result<(), &'static str>> {
-        let item_spans: Vec<Option<&str>> = vec![Some(&SLC), None];
         let indic_inputs: Vec<&&mut IndicatorInput> = slice_inputs.iter()
             .filter(|i| i.code == code)
             .collect();
         if indic_inputs.len() == 0 {
             return None;
         }
-        let computer = indic_inputs.first().unwrap().get_computer(&self.context.configuration);
-        let target_input = indic_inputs
-            .iter()
+        let target_input = indic_inputs.iter()
             .filter(|&&i| i.key.span == None && i.key.date == *date)
             .next();
         match target_input {
@@ -202,8 +199,19 @@ impl InputMonitoring {
             },
             _ => {}
         }
-        let input_values = self.extract_ltm_values(date, &indic_inputs);
+        let mode = self.context.configuration.get(code).expect("Unable to determine compute mode");
+        // direct sum
+        // if let ComputerMode::AddUp = mode {
+        //     *target_input.unwrap().ltm.borrow_mut() = self.compute_ltm_values(date, &indic_inputs);
+        //     return None;
+        // }
+        // let input_values = self.extract_ltm_values(date, &indic_inputs);
+        let input_values = match mode {
+            ComputerMode::AddUp => self.extract_ltm_combinable_values(date, &indic_inputs),
+            _ => self.extract_ltm_values(date, &indic_inputs)
+        };
         
+        let computer = indic_inputs.first().unwrap().get_computer(&self.context.configuration);
         match computer.compute(&input_values) {
             Ok(x) => {
                 target_input.map(|val| *val.ltm.borrow_mut() = Some(x));
@@ -248,8 +256,131 @@ impl InputMonitoring {
         input_values
     }
 
-    fn extract_ltm_values(&self, date: &DateKey, indic_inputs: &Vec<&&mut IndicatorInput>) -> Vec<Box<f64>> {
-        vec![]
+    fn extract_ltm_values(&self, end_date: &DateKey, indic_inputs: &Vec<&&mut IndicatorInput>) -> Vec<Box<f64>> {
+        let mut start_date = *end_date;
+        start_date.add_months(-12);
+        let mut month_inputs: Vec<_> = indic_inputs.iter()
+            .filter(|i| start_date <= i.key.date && i.key.date <= *end_date)
+            .filter(|i| i.key.span == None)
+            .collect();
+
+        month_inputs.sort_by(|&&a, &&b| a.key.date.cmp(&b.key.date));
+        
+        let mut input_values: Vec<Box<f64>> = Vec::new();
+        month_inputs.iter().for_each(|i| {
+            let mut o = i.input.borrow().inputed;
+            if o == None {
+                o = i.input.borrow().computed;
+            }
+            match o {
+                Some(f) => input_values.push(Box::new(f)),
+                None => {}
+            }
+        });
+        input_values
+    }
+
+    fn compute_ltm_values(&self, end_date: &DateKey, indic_inputs: &Vec<&&mut IndicatorInput>) -> Option<f64> {
+        let mut month_inputs: Vec<_> = indic_inputs.iter().filter(|i| i.key.span == None).collect();
+        let slc_inputs: Vec<_> = indic_inputs.iter().filter(|i| i.key.span == Some(&SLC)).collect();
+        if slc_inputs.iter()
+            .filter(|i| i.input.borrow().computed != None || i.input.borrow().inputed != None)
+            .count() < 4 {
+                return None;
+            }
+        let mut start_date = *end_date;
+        start_date.add_months(-12);
+        month_inputs.sort_by(|&&a, &&b| a.key.date.cmp(&b.key.date));
+        let mut result: Option<f64> = None;
+        let mut buffer: Vec<f64> = vec![];
+        let mut out_buffer: Vec<f64> = vec![];
+        month_inputs.iter().for_each(|ii| {
+            let s = slc_inputs.iter()
+                .filter(|i| i.key.date == ii.key.date)
+                .next();
+            if ii.key.date < start_date {
+                if let Some(v) = ii.get_value() {
+                    out_buffer.push(v);
+                }
+            }
+            else {
+                if let Some(v) = ii.get_value() {
+                    if ii.key.date <= *end_date {
+                        buffer.push(v);
+                    }
+                    else {
+                        out_buffer.push(v);
+                    }
+                }
+                if let Some(v) = s {
+                    if let Some(x) = v.input.borrow().inputed {
+                        if v.key.date < *end_date {
+                            let f = result.unwrap_or_default();
+                            result = Some((x / (out_buffer.len() + buffer.len()) as f64) * buffer.len() as f64 + f);
+                        }
+                    }
+                    else if buffer.len() > 0 {
+                        let f = result.unwrap_or_default();
+                        buffer.push(f);
+                        result = Some(fsum::FSum::new().add_all(&buffer).value());
+                    }
+                    buffer.clear();
+                    out_buffer.clear();
+                }
+            }
+        });
+        
+        result
+    }
+
+    fn extract_ltm_combinable_values(&self, end_date: &DateKey, indic_inputs: &Vec<&&mut IndicatorInput>) -> Vec<Box<f64>> {
+        let mut month_inputs: Vec<_> = indic_inputs.iter().filter(|i| i.key.span == None).collect();
+        let slc_inputs: Vec<_> = indic_inputs.iter().filter(|i| i.key.span == Some(&SLC)).collect();
+        if slc_inputs.iter()
+            .filter(|i| i.input.borrow().computed != None || i.input.borrow().inputed != None)
+            .count() < 4 {
+                return vec![];
+            }
+        let mut start_date = *end_date;
+        start_date.add_months(-12);
+        month_inputs.sort_by(|&&a, &&b| a.key.date.cmp(&b.key.date));
+        let mut values: Vec<Box<f64>> = vec![];
+        let mut buffer: Vec<f64> = vec![];
+        let mut out_buffer: Vec<f64> = vec![];
+        month_inputs.iter().for_each(|ii| {
+            let s = slc_inputs.iter()
+                .filter(|i| i.key.date == ii.key.date)
+                .next();
+            if ii.key.date < start_date {
+                if let Some(v) = ii.get_value() {
+                    out_buffer.push(v);
+                }
+            }
+            else {
+                if let Some(v) = ii.get_value() {
+                    if ii.key.date <= *end_date {
+                        buffer.push(v);
+                    }
+                    else {
+                        out_buffer.push(v);
+                    }
+                }
+                if let Some(v) = s {
+                    if let Some(x) = v.input.borrow().inputed {
+                        if v.key.date < *end_date {
+                            values.push(Box::new((x / (out_buffer.len() + buffer.len()) as f64) * buffer.len() as f64));
+                        }
+                    }
+                    else if buffer.len() > 0 {
+                        values.extend(buffer.iter().map(|x| Box::new(*x)));
+                    }
+                    buffer.clear();
+                    out_buffer.clear();
+                }
+            }
+        });
+        
+        values
     }
     
 }

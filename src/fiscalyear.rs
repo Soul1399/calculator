@@ -12,7 +12,7 @@ impl FiscalYear {
     pub fn build(mths: Rc<Vec<DateKey>>) -> FiscalYear {
         const MAX_MONTHS: u8 = 24;
         if mths.len() > MAX_MONTHS as usize {
-            panic!("Fiscal year does not allow having more than {} momths", MAX_MONTHS);
+            panic!("Fiscal year does not allow having more than {} months", MAX_MONTHS);
         }
         FiscalYear { slices: HashMap::new(), months: mths }
     }
@@ -64,20 +64,13 @@ impl FiscalYear {
         let mut start_date = *end_date;
         start_date.add_months(-12);
 
-        let _s = list.iter().flat_map(|y| y.slices.iter().map(|x| x.1))
-            .filter(|&s| s.iter().any(|d| d == end_date))
-            .next();
+        let _s: Vec<_> = list.iter().flat_map(|y| y.slices.iter().map(|x| x.1))
+            .filter(|&s| s.iter().any(|d| d == end_date || d == &start_date))
+            .collect();
 
-        let mut slice: Vec<DateKey>;
-        match _s {
-            Some(v) => {
-                slice = v.to_vec();
-                slice.sort();
-            },
-            None => {
-                return Err("LTM date not found");
-            }
-        };
+        if _s.len() == 0 {
+            return Err("LTM date not found");
+        }
 
         let mut dates: Vec<DateKey> = list.iter()
             .flat_map(|y| y.months.as_ref())
@@ -85,7 +78,7 @@ impl FiscalYear {
             .filter(|m| start_date <= *m && m <= end_date)
             .collect();
 
-        dates.push(*slice.last().unwrap());
+        dates.extend(_s.iter().flat_map(|s| *s));
 
         if dates.len() > 0 {
             dates.sort();
