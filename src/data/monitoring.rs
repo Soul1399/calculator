@@ -334,7 +334,7 @@ impl InputMonitoring {
     }
 
     fn extract_ltm_combinable_values(&self, end_date: &DateKey, slice: &Vec<DateKey>, indic_inputs: &Vec<&&mut IndicatorInput>, mode: &ComputerMode) -> Vec<Box<f64>> {
-        let mut month_inputs: Vec<_> = indic_inputs.iter().filter(|i| i.key.span == None).collect();
+        let month_inputs: Vec<_> = indic_inputs.iter().filter(|i| i.key.span == None).collect();
         let slc_inputs: Vec<_> = indic_inputs.iter().filter(|i| i.key.span == Some(&SLC)).collect();
         let min_slc = if let &ComputerMode::Avg = mode { 1 } else { 4 };
         if slc_inputs.iter()
@@ -344,7 +344,6 @@ impl InputMonitoring {
             }
         let mut start_date = *end_date;
         start_date.add_months(-12);
-        month_inputs.sort_by(|&&a, &&b| a.key.date.cmp(&b.key.date));
         let mut values: Vec<Box<f64>> = vec![];
         let mut buffer: Vec<f64> = vec![];
         let mut out_buffer: Vec<f64> = vec![];
@@ -359,24 +358,16 @@ impl InputMonitoring {
             let m = month_inputs.iter()
                 .filter(|i| i.key.date == *current_date)
                 .next();
-
-            if *current_date < start_date || current_date > end_date {
-                out_buffer.push(0.0);
-                if let Some(ii) = m {
-                    if let Some(v) = ii.get_value() {
-                        out_buffer.pop();
-                        out_buffer.push(v);
-                    }
+            
+            buffer.push(Default::default());
+            if let Some(ii) = m {
+                if let Some(v) = ii.get_value() {
+                    buffer.pop();
+                    buffer.push(v);
                 }
             }
-            else {
-                buffer.push(0.0);
-                if let Some(ii) = m {
-                    if let Some(v) = ii.get_value() {
-                        buffer.pop();
-                        buffer.push(v);
-                    }
-                }
+            if *current_date < start_date || current_date > end_date {
+                out_buffer.push(buffer.pop().unwrap());
             }
 
             if let Some(v) = s {
@@ -390,7 +381,12 @@ impl InputMonitoring {
                 }
                 else if let &ComputerMode::Avg = mode {
                     if let Some(x) = v.input.borrow().computed {
-                        values.push(Box::new(x));
+                        if out_buffer.len() == 0 {
+                            values.push(Box::new(x));
+                        }
+                        else {
+                            values.push(Box::new(buffer.iter().sum()));
+                        }
                     }
                 }
                 else if buffer.len() > 0 {
