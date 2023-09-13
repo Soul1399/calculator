@@ -94,7 +94,7 @@ impl InputMonitoring {
                 None => break
             }
             if span == Some(&LTM) {
-                if let Some(value) = self.compute_ltm_of_indicator(&slice_inputs, &key.date, code) {
+                if let Some(value) = self.compute_ltm_of_indicator(&slice_inputs, slice, &key.date, code) {
                     return value;
                 }
             }
@@ -183,7 +183,7 @@ impl InputMonitoring {
         None
     }
 
-    fn compute_ltm_of_indicator(&self, slice_inputs: &Vec<&mut IndicatorInput>, date: &DateKey, code: &'static isize) -> Option<Result<(), &'static str>> {
+    fn compute_ltm_of_indicator(&self, slice_inputs: &Vec<&mut IndicatorInput>, slice: &Vec<DateKey>, date: &DateKey, code: &'static isize) -> Option<Result<(), &'static str>> {
         let indic_inputs: Vec<&&mut IndicatorInput> = slice_inputs.iter()
             .filter(|i| i.code == code)
             .collect();
@@ -207,7 +207,7 @@ impl InputMonitoring {
         // }
         // let input_values = self.extract_ltm_values(date, &indic_inputs);
         let input_values = match mode {
-            ComputerMode::AddUp => self.extract_ltm_combinable_values(date, &indic_inputs),
+            ComputerMode::AddUp | ComputerMode::Avg => self.extract_ltm_combinable_values(date, slice, &indic_inputs, mode),
             _ => self.extract_ltm_values(date, &indic_inputs)
         };
         
@@ -333,12 +333,13 @@ impl InputMonitoring {
         result
     }
 
-    fn extract_ltm_combinable_values(&self, end_date: &DateKey, indic_inputs: &Vec<&&mut IndicatorInput>) -> Vec<Box<f64>> {
+    fn extract_ltm_combinable_values(&self, end_date: &DateKey, slice: &Vec<DateKey>, indic_inputs: &Vec<&&mut IndicatorInput>, mode: &ComputerMode) -> Vec<Box<f64>> {
         let mut month_inputs: Vec<_> = indic_inputs.iter().filter(|i| i.key.span == None).collect();
         let slc_inputs: Vec<_> = indic_inputs.iter().filter(|i| i.key.span == Some(&SLC)).collect();
+        let min_slc = if let &ComputerMode::Avg = mode { 1 } else { 4 };
         if slc_inputs.iter()
             .filter(|i| i.input.borrow().computed != None || i.input.borrow().inputed != None)
-            .count() < 4 {
+            .count() < min_slc {
                 return vec![];
             }
         let mut start_date = *end_date;
@@ -347,38 +348,61 @@ impl InputMonitoring {
         let mut values: Vec<Box<f64>> = vec![];
         let mut buffer: Vec<f64> = vec![];
         let mut out_buffer: Vec<f64> = vec![];
-        month_inputs.iter().for_each(|ii| {
+        let mut dates: Vec<&DateKey> = slice.iter().collect();
+        dates.sort();
+        let mut current_date: &DateKey;
+        while dates.len() > 0 {
+            current_date = dates.first().unwrap();
             let s = slc_inputs.iter()
-                .filter(|i| i.key.date == ii.key.date)
+                .filter(|i| i.key.date == *current_date)
                 .next();
-            if ii.key.date < start_date {
-                if let Some(v) = ii.get_value() {
-                    out_buffer.push(v);
-                }
-            }
-            else {
-                if let Some(v) = ii.get_value() {
-                    if ii.key.date <= *end_date {
-                        buffer.push(v);
-                    }
-                    else {
+            let m = month_inputs.iter()
+                .filter(|i| i.key.date == *current_date)
+                .next();
+
+            if *current_date < start_date || current_date > end_date {
+                out_buffer.push(0.0);
+                if let Some(ii) = m {
+                    if let Some(v) = ii.get_value() {
+                        out_buffer.pop();
                         out_buffer.push(v);
                     }
                 }
-                if let Some(v) = s {
-                    if let Some(x) = v.input.borrow().inputed {
-                        if v.key.date < *end_date {
-                            values.push(Box::new((x / (out_buffer.len() + buffer.len()) as f64) * buffer.len() as f64));
-                        }
+            }
+            else {
+                buffer.push(0.0);
+                if let Some(ii) = m {
+                    if let Some(v) = ii.get_value() {
+                        buffer.pop();
+                        buffer.push(v);
                     }
-                    else if buffer.len() > 0 {
-                        values.extend(buffer.iter().map(|x| Box::new(*x)));
-                    }
-                    buffer.clear();
-                    out_buffer.clear();
                 }
             }
-        });
+
+            if let Some(v) = s {
+                if let Some(x) = v.input.borrow().inputed {
+                    if out_buffer.len() == 0 {
+                        values.push(Box::new(x));
+                    }
+                    else {
+                        values.push(Box::new((x / (out_buffer.len() + buffer.len()) as f64) * buffer.len() as f64));
+                    }
+                }
+                else if let &ComputerMode::Avg = mode {
+                    if let Some(x) = v.input.borrow().computed {
+                        values.push(Box::new(x));
+                    }
+                }
+                else if buffer.len() > 0 {
+                    values.extend(buffer.iter().map(|x| Box::new(*x)));
+                }
+                buffer.clear();
+                out_buffer.clear();
+            }
+
+            // to avoid duplicate values
+            dates.retain(|d| *d != current_date);
+        }
         
         values
     }
