@@ -1,10 +1,18 @@
 
 use std::error::Error;
 
-use calculator::{data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{SLC, FY, LTM}, Descriptive};
+use calculator::{data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{SLC, FY, LTM}, Descriptive, webserver};
 
 
 fn main() -> Result<(), Box<dyn Error>> {
+    start_compute()
+
+    //webserver::start_listening();
+    //Ok(())
+}
+
+
+fn start_compute() -> Result<(), Box<dyn Error>> {
     let monitor = InputMonitoring::build(
         InputContext::build(1), 
         data::load_context(1));

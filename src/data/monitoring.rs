@@ -1,4 +1,6 @@
 
+use std::cell::RefCell;
+
 use crate::{fiscalyear::FiscalYear, indic::{IndicatorInput, SLC, FY, LTM, ComputerMode}, ComputeError, ComputeKey, date::DateKey};
 use super::inputs::InputContext;
 
@@ -334,73 +336,207 @@ impl InputMonitoring {
     }
 
     fn extract_ltm_combinable_values(&self, end_date: &DateKey, slice: &Vec<DateKey>, indic_inputs: &Vec<&&mut IndicatorInput>, mode: &ComputerMode) -> Vec<Box<f64>> {
-        let month_inputs: Vec<_> = indic_inputs.iter().filter(|i| i.key.span == None).collect();
-        let slc_inputs: Vec<_> = indic_inputs.iter().filter(|i| i.key.span == Some(&SLC)).collect();
-        let min_slc = if let &ComputerMode::Avg = mode { 1 } else { 4 };
-        if slc_inputs.iter()
-            .filter(|i| i.input.borrow().computed != None || i.input.borrow().inputed != None)
-            .count() < min_slc {
-                return vec![];
-            }
-        let mut start_date = *end_date;
-        start_date.add_months(-12);
-        let mut values: Vec<Box<f64>> = vec![];
-        let mut buffer: Vec<f64> = vec![];
-        let mut out_buffer: Vec<f64> = vec![];
-        let mut dates: Vec<&DateKey> = slice.iter().collect();
-        dates.sort();
-        let mut current_date: &DateKey;
-        while dates.len() > 0 {
-            current_date = dates.first().unwrap();
-            let s = slc_inputs.iter()
-                .filter(|i| i.key.date == *current_date)
-                .next();
-            let m = month_inputs.iter()
-                .filter(|i| i.key.date == *current_date)
-                .next();
-            
-            buffer.push(Default::default());
-            if let Some(ii) = m {
-                if let Some(v) = ii.get_value() {
-                    buffer.pop();
-                    buffer.push(v);
-                }
-            }
-            if *current_date < start_date || current_date > end_date {
-                out_buffer.push(buffer.pop().unwrap());
-            }
-
-            if let Some(v) = s {
-                if let Some(x) = v.input.borrow().inputed {
-                    if out_buffer.len() == 0 {
-                        values.push(Box::new(x));
-                    }
-                    else {
-                        values.push(Box::new((x / (out_buffer.len() + buffer.len()) as f64) * buffer.len() as f64));
-                    }
-                }
-                else if let &ComputerMode::Avg = mode {
-                    if let Some(x) = v.input.borrow().computed {
-                        if out_buffer.len() == 0 {
-                            values.push(Box::new(x));
-                        }
-                        else {
-                            values.push(Box::new(buffer.iter().sum()));
-                        }
-                    }
-                }
-                else if buffer.len() > 0 {
-                    values.extend(buffer.iter().map(|x| Box::new(*x)));
-                }
-                buffer.clear();
-                out_buffer.clear();
-            }
-
-            // to avoid duplicate values
-            dates.retain(|d| *d != current_date);
+        let x: Vec<&IndicatorInput> = indic_inputs.iter().map(|i| &***i).collect();
+        let mut ltm = LtmSumHandler::new(end_date, slice, &x, mode);
+        let ltm = ltm.verify();
+        if let Err(e) = ltm {
+            panic!("{e}");
         }
-        
-        values
+        let ltm = ltm.unwrap().collect_values();
+        if let Err(e) = ltm {
+            panic!("{e}");
+        }
+        ltm.unwrap().get_values().unwrap().borrow().to_vec()
     }
     
+}
+
+#[derive(Clone)]
+struct LtmInputs<'a> {
+    start_date: DateKey,
+    end_date: DateKey,
+    dates: Vec<DateKey>,
+    month_inputs: Vec<&'a IndicatorInput>,
+    slice_inputs: Vec<&'a IndicatorInput>,
+    compute_mode: &'a ComputerMode,
+    values: RefCell<Vec<Box<f64>>>,
+    buffer: RefCell<Vec<f64>>,
+    bypass_buffer: RefCell<Vec<f64>>,
+    min_slc: usize,
+    is_unavailable: bool
+}
+pub trait LtmState {
+    fn get_values(&self) -> Option<RefCell<Vec<Box<f64>>>> {
+        None
+    }
+}
+
+pub struct LtmInit<'a> {
+    ltm_data: LtmInputs<'a>
+}
+
+pub struct LtmSumHandler<'a> {
+    ltm_data: LtmInputs<'a>
+}
+
+pub struct LtmCollector<'a> {
+    ltm_data: LtmInputs<'a>
+}
+
+impl<'a> LtmState for LtmInit<'a> {}
+impl<'a> LtmState for LtmSumHandler<'a> {}
+impl<'a> LtmState for LtmCollector<'a> {
+    fn get_values(&self) -> Option<RefCell<Vec<Box<f64>>>> {
+        Some(RefCell::clone(&self.ltm_data.values))
+    }
+}
+
+impl<'a> LtmSumHandler<'a> {
+    pub fn new(date: &'a DateKey, slice: &'a Vec<DateKey>, inputs: &'a Vec<&'a IndicatorInput>, mode: &'a ComputerMode) -> LtmInit<'a> {
+        LtmInit { ltm_data: LtmInputs::build(date, slice, inputs, mode) }
+    }
+
+    pub fn collect_values(&self) -> Result<LtmCollector<'a>, &'static str> {
+        if !self.ltm_data.is_unavailable {
+            let mut current_date: &DateKey;
+            let mut dates: Vec<&DateKey> = self.ltm_data.dates.iter().collect();
+            dates.sort();
+            while dates.len() > 0 {
+                current_date = dates.first().unwrap();
+                self.buffer(current_date);
+                self.collect(current_date);
+                // to avoid duplicate values
+                dates.retain(|d| *d != current_date);
+            }
+        }
+        Ok(LtmCollector { ltm_data: self.ltm_data.clone() })
+    }
+
+    fn buffer(&self, current_date: &DateKey) {
+        let m = self.ltm_data.month_inputs.iter()
+            .filter(|i| i.key.date == *current_date)
+            .next();
+        
+        self.ltm_data.buffer.borrow_mut().push(Default::default());
+        if let Some(ii) = m {
+            if let Some(v) = ii.get_value() {
+                self.ltm_data.buffer.borrow_mut().pop();
+                self.ltm_data.buffer.borrow_mut().push(v);
+            }
+        }
+        if *current_date < self.ltm_data.start_date || *current_date > self.ltm_data.end_date {
+            self.ltm_data.bypass_buffer.borrow_mut().push(self.ltm_data.buffer.borrow_mut().pop().unwrap());
+        }
+    }
+
+    fn collect(&self, current_date: &DateKey) {
+        let s = self.ltm_data.slice_inputs.iter()
+            .filter(|i| i.key.date == *current_date)
+            .next();
+        if let Some(v) = s {
+            let nb_bypass = self.ltm_data.bypass_buffer.borrow().len();
+            let nb_buffered = self.ltm_data.buffer.borrow().len();
+            if let Some(x) = v.input.borrow().inputed {
+                if nb_bypass == 0 {
+                    self.ltm_data.values.borrow_mut().push(Box::new(x));
+                }
+                else {
+                    self.ltm_data.values.borrow_mut().push(Box::new((x / (nb_bypass + nb_buffered) as f64) * nb_buffered as f64));
+                }
+            }
+            else if let &ComputerMode::Avg = self.ltm_data.compute_mode {
+                if let Some(x) = v.input.borrow().computed {
+                    if nb_bypass == 0 {
+                        self.ltm_data.values.borrow_mut().push(Box::new(x));
+                    }
+                    else {
+                        self.ltm_data.values.borrow_mut().push(Box::new(self.ltm_data.buffer.borrow().iter().map(|f| *f).sum()));
+                    }
+                }
+            }
+            else if nb_buffered > 0 {
+                self.ltm_data.values.borrow_mut().extend(self.ltm_data.buffer.borrow().iter().map(|x| Box::new(*x)));
+            }
+            self.ltm_data.buffer.borrow_mut().clear();
+            self.ltm_data.bypass_buffer.borrow_mut().clear();
+        }
+    }
+}
+
+impl<'a> LtmInit<'a> {
+    pub fn verify(&mut self) -> Result<LtmSumHandler, &'static str> {
+        if self.ltm_data.slice_inputs.len() == 0 {
+            return Err("Missing slice inputs");
+        }
+
+        if self.ltm_data.slice_inputs.iter().filter(|i| i.input.borrow().computed != None || i.input.borrow().inputed != None).count() < self.ltm_data.min_slc {
+            self.ltm_data.is_unavailable = true;
+        }
+
+        Ok(LtmSumHandler { ltm_data: self.ltm_data.clone() })
+    }
+}
+
+impl<'a> LtmInputs<'a> {
+    fn build(date: &'a DateKey, slice: &'a Vec<DateKey>, inputs: &'a Vec<&'a IndicatorInput>, mode: &'a ComputerMode) -> LtmInputs<'a> {
+        let mut start_date = *date;
+        start_date.add_months(-12);
+        let ltm = LtmInputs { 
+            start_date, 
+            end_date: *date, 
+            dates: slice.into_iter().map(|d| *d).collect(), 
+            month_inputs: inputs.iter().filter(|i| i.key.span == None).map(|i| *i).collect(),
+            slice_inputs: inputs.iter().filter(|i| i.key.span == Some(&SLC)).map(|i| *i).collect(),
+            compute_mode: mode,
+            min_slc: if let &ComputerMode::Avg = mode { 1 } else { 4 },
+            buffer: RefCell::new(Vec::with_capacity(slice.len())),
+            bypass_buffer: RefCell::new(Vec::with_capacity(slice.len())),
+            values: RefCell::new(vec![]),
+            is_unavailable: false
+        };
+        
+        ltm
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{date::DateKey, indic::{ComputerMode, SALES_CODE}, data::inputs::UserInput};
+    use std::{cell::RefCell, rc::Rc};
+    use super::*;
+
+    #[test]
+    #[should_panic(expected="Missing slice inputs")]
+    fn new_ltm()  {
+        let date = DateKey::build(1, 2023);
+        let mut slice: Vec<DateKey> = (1..7).into_iter().map(|x| DateKey::build(x, 2023)).collect();
+        slice.extend((7..13).into_iter().map(|x| DateKey::build(x, 2022)));
+        let mode = &ComputerMode::AddUp;
+        let inputs: Vec<&IndicatorInput> = vec![];
+        let mut ltm = LtmSumHandler::new(&date, &slice, &inputs, &mode);
+        let ltm = ltm.verify();
+        assert!(ltm.unwrap().ltm_data.is_unavailable);
+    }
+
+    #[test]
+    fn is_unavailable_ltm()  {
+        let date = DateKey::build(1, 2023);
+        let mut slice: Vec<DateKey> = (1..7).into_iter().map(|x| DateKey::build(x, 2023)).collect();
+        slice.extend((7..13).into_iter().map(|x| DateKey::build(x, 2022)));
+        let mode = &ComputerMode::AddUp;
+        let list: Vec<IndicatorInput> = vec![
+            IndicatorInput { 
+                code: &SALES_CODE, 
+                input: RefCell::new(UserInput { author: String::new(), computed: None, inputed: None }), 
+                ltm: RefCell::new(None), 
+                context: 1, 
+                key: Rc::new(ComputeKey { date: DateKey::build(9, 2023), span: Some(&SLC) })
+            }];
+
+        let inputs: Vec<&IndicatorInput> = list.iter().collect();
+
+        let mut ltm = LtmSumHandler::new(&date, &slice, &inputs, &mode);
+        let ltm = ltm.verify();
+        assert!(ltm.unwrap().ltm_data.is_unavailable);
+    }
 }
