@@ -1,7 +1,7 @@
 
 use std::error::Error;
 
-use calculator::{data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{SLC, FY, LTM}, Descriptive, webserver};
+use calculator::{data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{SLC, FY}, Descriptive, webserver};
 
 
 fn main() -> Result<(), Box<dyn Error>> {

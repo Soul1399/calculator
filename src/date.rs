@@ -135,7 +135,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Month has to be between 1 and 12")]
     fn apply_invalid() {
-        let d = DateKey::build(40, 2000);
+        let _ = DateKey::build(40, 2000);
     }
 
     #[test]
