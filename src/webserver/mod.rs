@@ -1,32 +1,40 @@
 use std::{
     fs,
     io::{prelude::*, BufReader},
-    net::{TcpListener, TcpStream}, thread, time::Duration, error::Error, fmt::{Display, Formatter}, sync::{mpsc::{self, Receiver}, Mutex, Arc},
+    net::{TcpListener, TcpStream}, thread, time::Duration, error::Error, fmt::{Display, Formatter}, sync::{mpsc::{self, Receiver}, Mutex, Arc}, env::consts::OS,
 };
 
 pub struct ThreadPool {
     workers: Vec<Worker>,
-    sender: mpsc::Sender<Job>,
+    sender: Option<mpsc::Sender<Job>>,
 }
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
 pub struct Worker {
     id: usize,
-    handle: thread::JoinHandle<Receiver<Job>>
+    handle: Option<thread::JoinHandle<()>>
 }
 
 impl Worker {
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
         let handle = thread::spawn(move || loop {
-            let job = receiver.lock().unwrap().recv().unwrap();
+            let message = receiver.lock().unwrap().recv();
 
-            println!("Worker {id} got a job; executing.");
+            match message {
+                Ok(job) => {
+                    println!("Worker {id} got a job; executing.");
 
-            job();
+                    job();
+                }
+                Err(_) => {
+                    println!("Worker {id} disconnected; shutting down.");
+                    break;
+                }
+            }
         });
 
-        Worker { id, handle }
+        Worker { id, handle: Some(handle) }
     }
 }
 
@@ -36,10 +44,10 @@ impl ThreadPool {
     /// The size is the number of threads in the pool.
     ///
     pub fn build(size: usize) -> Result<ThreadPool, PoolCreationError> {
-        if size <  1 {
+        if size < 1 {
             return Err(PoolCreationError { details: String::from(format!("Invalid thead pool size: {size}")) });
         }
-        if size >  9 {
+        if size > 9 {
             return Err(PoolCreationError { details: String::from(format!("Thead pool size was too large: {size}")) });
         }
 
@@ -52,13 +60,27 @@ impl ThreadPool {
             workers.push(Worker::new(c, Arc::clone(&receiver)));
         }
 
-        Ok(ThreadPool { workers, sender })
+        Ok(ThreadPool { workers, sender: Some(sender) })
     }
 
-    pub fn execute<F>(&self, f: F)
-    where
-        F: FnOnce() + Send + 'static,
-    {
+    pub fn execute<F>(&self, f: F) where F: FnOnce() + Send + 'static {
+        let job = Box::new(f);
+
+        self.sender.as_ref().unwrap().send(job).unwrap();
+    }
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        drop(self.sender.take());
+        
+        for worker in &mut self.workers {
+            println!("Shutting down worker {}", worker.id);
+
+            if let Some(thread) = worker.handle.take() {
+                thread.join().unwrap();
+            }
+        }
     }
 }
 
@@ -99,14 +121,14 @@ fn handle_connection(mut stream: TcpStream) {
     let request_line = buf_reader.lines().next().unwrap().unwrap();
 
     let (status_line, filename) = match &request_line[..] {
-        "GET / HTTP/1.1" => ("HTTP/1.1 200 OK", "hello.html"),
+        "GET / HTTP/1.1" => ("HTTP/1.1 200 OK", "./src/webserver/hello.html"),
         "GET /sleep HTTP/1.1" => {
             thread::sleep(Duration::from_secs(5));
-            ("HTTP/1.1 200 OK", "hello.html")
+            ("HTTP/1.1 200 OK", "./src/webserver/hello.html")
         }
-        _ => ("HTTP/1.1 404 NOT FOUND", "404.html"),
+        _ => ("HTTP/1.1 404 NOT FOUND", "./src/webserver/404.html"),
     };
-
+    
     let contents = fs::read_to_string(filename).unwrap();
     let length = contents.len();
 

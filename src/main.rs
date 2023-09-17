@@ -5,10 +5,13 @@ use calculator::{data::{self, inputs::InputContext, monitoring::InputMonitoring}
 
 
 fn main() -> Result<(), Box<dyn Error>> {
-    start_compute()
-
-    //webserver::start_listening();
-    //Ok(())
+    //start_compute()
+    //println!("{}", std::env::current_dir().unwrap().to_string_lossy());
+    
+    if let Err(e) = webserver::start_listening() {
+        return Err(e);
+    }
+    Ok(())
 }
 
 
