@@ -1,7 +1,8 @@
 
 use std::cell::RefCell;
 
-use crate::{fiscalyear::FiscalYear, indic::{IndicatorInput, SLC, FY, LTM, ComputerMode}, ComputeError, ComputeKey, date::DateKey};
+use crate::{fiscalyear::FiscalYear, indic::{IndicatorInput, SLC, FY, LTM, ComputerMode}, date::DateKey};
+use crate::compute::{ComputeError, ComputeKey};
 use super::inputs::InputContext;
 
 
@@ -36,7 +37,7 @@ impl InputMonitoring {
                 message.push_str(&k.span.unwrap().to_string()[..]);
                 message.push_str(". Error: ");
                 message.push_str(e);
-                return Err(ComputeError { details: message });
+                return Err(ComputeError::new(message));
             }
         }
 
@@ -173,8 +174,8 @@ impl InputMonitoring {
                 target_input.map(|val| val.input.borrow_mut().computed = Some(x));
             },
             Err(e) => {
-                if e.details.len() > 0 {
-                    println!("{}", e.details);
+                if e.message().len() > 0 {
+                    println!("{}", e.message());
                     return Some(Err("Compute failed"));
                 }
                 else {
@@ -202,12 +203,6 @@ impl InputMonitoring {
             _ => {}
         }
         let mode = self.context.configuration.get(code).expect("Unable to determine compute mode");
-        // direct sum
-        // if let ComputerMode::AddUp = mode {
-        //     *target_input.unwrap().ltm.borrow_mut() = self.compute_ltm_values(date, &indic_inputs);
-        //     return None;
-        // }
-        // let input_values = self.extract_ltm_values(date, &indic_inputs);
         let input_values = match mode {
             ComputerMode::AddUp | ComputerMode::Avg => self.extract_ltm_combinable_values(date, slice, &indic_inputs, mode),
             _ => self.extract_ltm_values(date, &indic_inputs)
@@ -219,8 +214,8 @@ impl InputMonitoring {
                 target_input.map(|val| *val.ltm.borrow_mut() = Some(x));
             },
             Err(e) => {
-                if e.details.len() > 0 {
-                    println!("{}", e.details);
+                if e.message().len() > 0 {
+                    println!("{}", e.message());
                     return Some(Err("Compute failed"));
                 }
                 else {
@@ -463,7 +458,7 @@ mod tests {
     }
 
     #[test]
-    fn is_unavailable_ltm()  {
+    fn is_unavailable_ltm() {
         let (date, slice, mode) = init_ltm_data();
         let list = build_inputs(HashMap::new());
         let inputs = list.iter().collect();

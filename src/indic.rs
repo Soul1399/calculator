@@ -4,7 +4,7 @@ use enum_iterator::Sequence;
 use fsum::FSum;
 use strum_macros::FromRepr;
 
-use crate::{Descriptive, ComputeError, data::inputs::UserInput, ComputeKey};
+use crate::{compute::{ComputeError, ComputeKey}, Descriptive, data::inputs::UserInput};
 
 pub const SALES_CODE: isize = 37;
 pub const EBITDA_CODE: isize = 48;
@@ -60,7 +60,7 @@ impl ComputerMode {
     pub fn compute(&self, inputs: &Vec<Box<f64>>) -> Result<f64, ComputeError> {
         let length = inputs.len();
         if length == 0 {
-            return Err(ComputeError { details: String::new() });
+            return Err(ComputeError::new(String::new()));
         }
 
         let values = inputs.iter()
@@ -70,7 +70,7 @@ impl ComputerMode {
             Self::Default => Ok(*values.last().unwrap()),
             Self::AddUp => Ok(FSum::new().add_all(values).value()),
             Self::Avg => { Ok(FSum::new().add_all(values).value() / length as f64) },
-            Self::Complex(_) => Err(ComputeError { details: "Not yet implemented".to_string() })
+            Self::Complex(_) => Err(ComputeError::new("Not yet implemented".to_string()))
         }
     }
 }
