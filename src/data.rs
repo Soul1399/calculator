@@ -9,7 +9,7 @@ pub fn get_all_inputs() -> Vec<IndicatorInput> {
 }
 
 pub fn load_context<'y>(context_id: isize) -> Vec<FiscalYear> {
-    mock::fake_context()
+    mock::fake_years()
 }
 
 fn build_inputs(data: Vec<IndicatorInputData>) -> Vec<IndicatorInput> {

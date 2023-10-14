@@ -1,3 +1,4 @@
+use std::ops::{Range, RangeInclusive};
 use std::rc::Rc;
 
 use crate::date::DateKey;
@@ -5,8 +6,11 @@ use crate::fiscalyear::FiscalYear;
 use crate::indic::{SALES_CODE, CASH_CODE, SLC, NET_DEBT_CODE, FY, EBITDA_CODE, EBITA_CODE};
 use crate::data::IndicatorInputData;
 
+pub fn fake_context(default_month: u8, all_years: Vec<i32>, initial_month: Option<u8>) {
+   
+}
 
-pub fn fake_context<'y>() -> Vec<FiscalYear> {
+pub fn fake_years<'y>() -> Vec<FiscalYear> {
     const START: u8 = 3;
     const DELAY: u8 = 8;
     let mut year = 2019;
