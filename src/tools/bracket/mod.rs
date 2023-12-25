@@ -137,6 +137,20 @@ impl PartialEq for BracketChunk {
     }
 }
 
+impl BracketChunk {
+    pub fn is_escaped(&self, escaped_slices: &Vec<CharSlice>) -> bool {
+        escaped_slices
+            .iter()
+            .any(|b| b.start + b.quantity == self.idx)
+    }
+
+    pub fn is_free_text(&self, free_text_ranges: &Vec<(usize, usize)>) -> bool {
+        free_text_ranges
+            .iter()
+            .any(|r| r.0 >= self.idx || r.1 <= self.idx)
+    }
+}
+
 impl Default for Brackets {
     fn default() -> Self {
         Brackets {
@@ -282,12 +296,8 @@ impl Brackets {
             while x < length {
                 warning = None;
                 let (_, bk) = enm.next().unwrap();
-                if escaped_bounds
-                    .iter()
-                    .any(|b| b.start + b.quantity == bk.idx) { warning = Some(2) }
-                if free_text_ranges
-                    .iter()
-                    .any(|r| r.0 >= bk.idx || r.1 <= bk.idx) { warning = Some(3) }
+                if bk.is_escaped(&escaped_bounds) { warning = Some(2) }
+                if bk.is_free_text(&free_text_ranges) { warning = Some(3) }
                 if warning.is_some() { break }
                 match bk.typ {
                     BracketType::FreeText(_) | BracketType::List(_) => { break }
@@ -348,7 +358,7 @@ impl Brackets {
                 nb_ft_char = slc.quantity;
             }
             BracketType::List(size) => {
-                ft_char = Some(',');
+                ft_char = Some(COMMA_CHAR);
                 nb_ft_char = size;
             }
             _ => {

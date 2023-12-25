@@ -28,7 +28,7 @@ pub fn collect_bounds(s: &str, pattern: &str) -> Vec<BracketChunk> {
 pub fn collect_escaped(s: &str) -> Vec<CharSlice> {
     let re = Regex::new(format!(
         "{}{}{}{}{}{}{}", 
-        r"(\", ESCAPE_CHAR, r"+)[\", OPEN , r"\", CLOSE, "]").as_str()).unwrap();
+        "(\\", ESCAPE_CHAR, "+)[\\", OPEN , "\\", CLOSE, "]").as_str()).unwrap();
     re.captures_iter(&s).filter(|cp| {
         let m = cp.get(1).unwrap();
         m.len() % 2 != 0
