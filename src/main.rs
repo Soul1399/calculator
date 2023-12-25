@@ -1,10 +1,9 @@
-
 use std::error::Error;
-
-use calculator::{data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{SLC, FY}, Descriptive, webserver};
+use calculator::{data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{SLC, FY}, Descriptive, build_entities};
 
 
 fn main() -> Result<(), Box<dyn Error>> {
+    build_entities!(json "path");
     start_compute()
 }
 

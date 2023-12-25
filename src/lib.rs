@@ -6,6 +6,7 @@ pub trait Descriptive {
     fn name(&self) -> String;
 }
 
+pub mod frameval;
 pub mod compute;
 pub mod indic;
 pub mod data;

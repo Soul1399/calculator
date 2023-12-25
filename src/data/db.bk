@@ -1,0 +1,46 @@
+@[
+    name[trees]
+    version[@int:1]
+    escape char[\]
+    trimming[]
+]
+
+[
+    model[
+        currency[,code<3>,symbol,label]
+        country[,name, code<3>, currencyCode<3>]
+        user[,id<int>, firstname, lastname, surname, countryCode<3>]
+        division[,code,label,description]
+    ]
+    data[
+        countries[
+            [
+                name[Swiss]
+                code[CH]
+                currencyCode[CFR]
+            ]
+            [
+                name[United State of America]
+                code[USA]
+                currencyCode[USD]
+            ]
+        ]
+        divisions[
+            [
+                code[45]
+                label[|block[45]|]
+            ]
+            [
+                code[10]
+                label[||block[|10|]||]
+                description[absolute block 10]
+            ]
+            [
+                code[1]
+                label[|\|main block|]|]
+                description[absolute block 10]
+            ]
+        ]
+        [|[dbo].[other]|][]
+    ]
+]

@@ -1,5 +1,7 @@
 use std::rc::Rc;
 
+#[macro_use]
+pub mod macros;
 
 pub fn is_between<'a, T>(value: &'a T, min: Option<&'a T>, max: Option<&'a T>) -> Result<Option<bool>, &'static str> where T: PartialOrd + Default {
     if min == None && max == None {
@@ -15,4 +17,4 @@ pub fn is_between_copy<T>(value: Rc<T>, min: T, max: T) -> bool where T: Partial
     min < *value && *value < max
 }
 
-pub mod macros;
+pub mod bracket;
