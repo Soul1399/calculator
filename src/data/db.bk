@@ -1,16 +1,15 @@
 @[
     name[trees]
-    version[@int:1]
-    escape char[\]
+    version[1]
     trimming[]
 ]
 
 [
     model[
-        currency[,code<3>,symbol,label]
-        country[,name, code<3>, currencyCode<3>]
-        user[,id<int>, firstname, lastname, surname, countryCode<3>]
-        division[,code,label,description]
+        currency[,code<3>,symbol,label,]
+        country[,name, code<3>, currencyCode<3>,]
+        user[,id<int>, firstname, lastname, surname, countryCode<3>,]
+        division[,code,label,description,]
     ]
     data[
         countries[
@@ -37,10 +36,10 @@
             ]
             [
                 code[1]
-                label[|\|main block|]|]
-                description[absolute block 10]
+                label[:|main block|:]
+                description[|absolute| block 10]
             ]
         ]
-        [|[dbo].[other]|][]
+        [|[dbo].[other]|][test \[\]]
     ]
 ]

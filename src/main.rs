@@ -4,7 +4,11 @@ use calculator::{data::{self, inputs::InputContext, monitoring::InputMonitoring}
 
 fn main() -> Result<(), Box<dyn Error>> {
     build_entities!(json "path");
-    start_compute()
+    let x = 1;
+    build_entities!(valueof x);
+
+    Ok(())
+    //start_compute()
 }
 
 

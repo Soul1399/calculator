@@ -99,19 +99,19 @@ impl PartialOrd for DateKey {
     }
 
     fn lt(&self, other: &Self) -> bool {
-        matches!(self.partial_cmp(other), Some(std::cmp::Ordering::Less))
+        matches!(self.partial_cmp(other), Some(Ordering::Less))
     }
 
     fn le(&self, other: &Self) -> bool {
-        matches!(self.partial_cmp(other), Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal))
+        matches!(self.partial_cmp(other), Some(Ordering::Less | Ordering::Equal))
     }
 
     fn gt(&self, other: &Self) -> bool {
-        matches!(self.partial_cmp(other), Some(std::cmp::Ordering::Greater))
+        matches!(self.partial_cmp(other), Some(Ordering::Greater))
     }
 
     fn ge(&self, other: &Self) -> bool {
-        matches!(self.partial_cmp(other), Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal))
+        matches!(self.partial_cmp(other), Some(Ordering::Greater | Ordering::Equal))
     }
 }
 

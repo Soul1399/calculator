@@ -1,6 +1,8 @@
+use std::collections::{HashMap};
+
 use regex::Regex;
 
-use super::{RE_OPEN_START, RE_OPEN_CONFIG, RE_END, TOKEN_INT, BracketType, TOKEN_DATE, TOKEN_REAL, OPEN, TOKEN_PIPE, TOKEN_COLON, TOKEN_COMMA, TOKEN_COLON_END, TOKEN_PIPE_END, BracketChunk, CharSlice, ESCAPE_CHAR, CLOSE};
+use super::{RE_OPEN_START, RE_OPEN_CONFIG, RE_END, TOKEN_INT, BracketType, TOKEN_DATE, TOKEN_REAL, OPEN, TOKEN_PIPE, TOKEN_COLON, TOKEN_COMMA, TOKEN_COLON_END, TOKEN_PIPE_END, BracketChunk, CharSlice, ESCAPE_CHAR, CLOSE, CONFIG_NAME, CONFIG_VERSION, CONFIG_ALLOW_EMPTY_FT, CONFIG_CLOSURE_MODE, CONFIG_TRIMMING};
 
 pub fn match_simple_start(s: &str) -> bool {
     let re_start = Regex::new(RE_OPEN_START).unwrap();
@@ -45,10 +47,10 @@ pub fn guess_type(m: &regex::Match<'_>) -> BracketType {
     if s.len() == 1 {
         return BracketType::Simple;
     }
-    if s.chars().next().unwrap() == CLOSE {
-        return guess_open_type(&m);
+    if s.chars().last().unwrap() == CLOSE {
+        return guess_close_type(&m);
     }
-    guess_close_type(&m)
+    guess_open_type(&m)
 }
 
 pub fn guess_open_type(m: &regex::Match<'_>) -> BracketType {
@@ -79,4 +81,30 @@ pub fn guess_close_type(m: &regex::Match<'_>) -> BracketType {
     }
     
     BracketType::Simple
+}
+
+pub fn extract_config(s: &str) -> HashMap<String, String> {
+    let props = vec![CONFIG_NAME, CONFIG_VERSION, CONFIG_ALLOW_EMPTY_FT, CONFIG_CLOSURE_MODE, CONFIG_TRIMMING];
+    let patterns: Vec<String> = props
+        .iter()
+        .map(|s| format!(r"{0}\[(?<{0}>[\w\s]*)\]", s))
+        .collect();
+
+    let pattern = patterns.join("|");
+
+    let mut map = HashMap::new();
+    let re = Regex::new(format!("{}{}{}", r"^\[\s*(", pattern, r")\s*\]").as_str()).unwrap();
+    let result = re.captures(&s);
+    if let Some(captures) = result {
+        props.into_iter().for_each(|p| {
+            if let Some(val) = captures.name(p) {
+                map.insert(p.clone().to_owned(), val.as_str().to_owned());
+            }
+            else {
+                map.insert(p.clone().to_owned(), String::new());
+            }
+        })
+    }
+
+    map
 }
