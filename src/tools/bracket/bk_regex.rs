@@ -23,7 +23,7 @@ pub fn collect_bounds(s: &str, pattern: &str) -> Vec<BracketChunk> {
     let re = Regex::new(pattern).unwrap();
     re.captures_iter(&s).map(|cp| {
         let m = cp.get(0).unwrap();
-        BracketChunk { idx: m.start(), typ: guess_type(&m), warning_code: Default::default() }
+        BracketChunk { idx: m.start(), typ: guess_type(&m), warning_code: Default::default(), is_first: false, linked_idx: 0 }
     }).collect()
 }
 
@@ -83,28 +83,33 @@ pub fn guess_close_type(m: &regex::Match<'_>) -> BracketType {
     BracketType::Simple
 }
 
-pub fn extract_config(s: &str) -> HashMap<String, String> {
+pub fn extract_config(s: &str) -> (usize, HashMap<String, String>) {
     let props = vec![CONFIG_NAME, CONFIG_VERSION, CONFIG_ALLOW_EMPTY_FT, CONFIG_CLOSURE_MODE, CONFIG_TRIMMING];
     let patterns: Vec<String> = props
         .iter()
-        .map(|s| format!(r"{0}\[(?<{0}>[\w\s]*)\]", s))
+        .map(|s| format!(r"({0}\[(?<{1}>[\w\s]*)\])?", s, s.replace(" ", "_")))
         .collect();
 
-    let pattern = patterns.join("|");
+    let pattern = patterns.join(r"\s*");
 
     let mut map = HashMap::new();
-    let re = Regex::new(format!("{}{}{}", r"^\[\s*(", pattern, r")\s*\]").as_str()).unwrap();
+    let re = Regex::new(format!("{}{}{}", r"^\[\s*", pattern, r"\s*(?<closure>\])").as_str()).unwrap();
+    
+    let mut closure_index: usize = 0;
     let result = re.captures(&s);
     if let Some(captures) = result {
         props.into_iter().for_each(|p| {
-            if let Some(val) = captures.name(p) {
-                map.insert(p.clone().to_owned(), val.as_str().to_owned());
+            if let Some(val) = captures.name(p.replace(" ", "_").as_str()) {
+                map.insert(p.to_owned(), val.as_str().to_owned());
             }
             else {
-                map.insert(p.clone().to_owned(), String::new());
+                map.insert(p.to_owned(), String::new());
+            }
+            if let Some(m) = captures.name("closure") {
+                closure_index = m.start();
             }
         })
     }
 
-    map
+    (closure_index, map)
 }

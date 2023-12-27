@@ -1,5 +1,5 @@
 use std::error::Error;
-use calculator::{data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{SLC, FY}, Descriptive, build_entities};
+use calculator::{data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{SLC, FY}, Descriptive, show_name, build_entities, tools::bracket::BracketFlag};
 
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -7,8 +7,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let x = 1;
     build_entities!(valueof x);
 
-    Ok(())
+    let v = build_entities!(listof SLC, FY);
+    println!("{}", v.join(","));
+
     //start_compute()
+    Ok(())
 }
 
 
