@@ -2,7 +2,7 @@ use std::collections::{HashMap};
 
 use regex::Regex;
 
-use super::{RE_OPEN_START, RE_OPEN_CONFIG, RE_END, TOKEN_INT, BracketType, TOKEN_DATE, TOKEN_REAL, OPEN, TOKEN_PIPE, TOKEN_COLON, TOKEN_COMMA, TOKEN_COLON_END, TOKEN_PIPE_END, BracketChunk, CharSlice, ESCAPE_CHAR, CLOSE, CONFIG_NAME, CONFIG_VERSION, CONFIG_ALLOW_EMPTY_FT, CONFIG_CLOSURE_MODE, CONFIG_TRIMMING};
+use super::{RE_OPEN_START, RE_OPEN_CONFIG, RE_END, TOKEN_INT, BracketType, TOKEN_DATE, TOKEN_REAL, OPEN, TOKEN_PIPE, TOKEN_COLON, TOKEN_COMMA, TOKEN_COLON_END, TOKEN_PIPE_END, BracketChunk, CharSlice, ESCAPE_CHAR, CLOSE, CONFIG_NAME, CONFIG_VERSION, CONFIG_ALLOW_EMPTY_FT, CONFIG_CLOSURE_MODE, CONFIG_TRIMMING, RE_OPEN};
 
 pub fn match_simple_start(s: &str) -> bool {
     let re_start = Regex::new(RE_OPEN_START).unwrap();
@@ -23,7 +23,13 @@ pub fn collect_bounds(s: &str, pattern: &str) -> Vec<BracketChunk> {
     let re = Regex::new(pattern).unwrap();
     re.captures_iter(&s).map(|cp| {
         let m = cp.get(0).unwrap();
-        BracketChunk { idx: m.start(), typ: guess_type(&m), warning_code: Default::default(), is_first: false, linked_idx: 0 }
+        BracketChunk {
+            idx: m.start(), 
+            typ: guess_type(&m), 
+            warning_code: Default::default(), 
+            is_first: if pattern == RE_OPEN { Some(false) } else { None }, 
+            linked_idx: 0
+        }
     }).collect()
 }
 

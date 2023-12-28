@@ -1,6 +1,6 @@
 /* sample text in data/db.bk */
 
-use std::{cmp::Ordering, collections::HashMap, fs::File, io::Read, ops::RangeInclusive, rc::Rc};
+use std::{cmp::Ordering, collections::HashMap, fs::File, io::Read, ops::{RangeInclusive, DerefMut}, rc::Rc, borrow::BorrowMut};
 
 use crate::tools::bracket::bk_error::{WARNING_ESCAPED, WARNING_FREE_TEXT};
 
@@ -93,7 +93,7 @@ pub struct BracketChunk {
     pub linked_idx: usize,
     pub typ: BracketType,
     pub warning_code: usize,
-    pub is_first: bool
+    pub is_first: Option<bool>
 }
 
 impl PartialEq for BracketChunk {
@@ -292,7 +292,10 @@ impl Brackets {
         self.is_processing = true;
         self.reset();
         self.spot_bounds()?;
-        self.link_bounds()?;
+        if let Err(e) = self.link_bounds() {
+            self.is_valid = Some(false);
+            return Err(e)
+        }
         Ok(())
     }
 
@@ -317,47 +320,74 @@ impl Brackets {
         self.is_valid = Some(self.open_bks.len() == self.close_bks.len());
         self.try_build_config()?;
         self.validate()?;
-        self.is_valid = Some(true);
         Ok(())
     }
 
     fn link_bounds(&mut self) -> Result<(), BracketsError> {
-        let mut scan: bool = true;
-        let mut stack: Vec<usize> = Vec::new();
-
-        let mut idx_map: HashMap<usize, usize> = HashMap::new();
-        self.open_bks.iter().enumerate().for_each(|(x, o)| {
-            idx_map.insert(x, o.idx);
-        });
-        
-        let mut enm_o = self.open_bks.iter_mut().enumerate();
-        let mut enm_c = self.close_bks.iter_mut().enumerate();
-        
-        let mut do_next_open = false;
-        let mut do_next_close = false;
-
-        let mut a = enm_o.next();
-        let mut z = enm_c.next();
+        let mut scan = true;
+        let mut stack_idx: Vec<usize> = Vec::new();
+        // let mut enm_o = self.open_bks.iter_mut().peekable();
+        // let mut enm_c = self.close_bks.iter_mut().peekable();
+        // while let Some(o) = enm_o.peek() {
+        //     if !o.is_first { enm_o.next(); }
+        //     else { break }
+        // }
+        // while let Some(c) = enm_c.peek() {
+        //     if enm_o.peek().unwrap().idx > c.idx { enm_c.next(); }
+        //     else { break }
+        // }
+        // let mut do_next_open = true;
+        // let mut do_next_close = true;
+        let all_bks = self.get_bounds_mut();
+        let mut enm = all_bks.into_iter().peekable();
+        while let Some(bk) = enm.peek() {
+            if let Some(false) = bk.is_first { enm.next(); }
+            else { break }
+        }
         
         while scan {
-            a = if do_next_open { enm_o.next() } else { None };
-            z = if do_next_close { enm_c.next() } else { None };
-            do_next_open = false;
-            do_next_close = false;
-            if let Some((x, o)) = a {
-                if let Some((y, c)) = z {
-                    if o.idx < c.idx {
-                        stack.push(x);
-                        do_next_open = true;
-                    }
-                    else {
-                        let open_index = stack.pop().unwrap();
-                        c.linked_idx = *idx_map.get(&open_index).unwrap();
-                        do_next_close = true;
-                    }
+            if let Some(bk) = enm.next() {
+                if bk.is_first.is_some() { stack_idx.push(bk.idx) }
+                else {
+                    if let Some(x) = stack_idx.pop() { bk.linked_idx = x }
+                    else { return Err(BracketsError::error_close(bk)) }
                 }
             }
+            else {
+                scan = false
+            }
+            // let o = if do_next_open { enm_o.next() } else { None };
+            // let c = if do_next_close { enm_c.next() } else { None };
+            // do_next_open = false;
+            // do_next_close = false;
+            // if let Some(open) = o {
+            //     if let Some(close) = c {
+            //         if open.idx < close.idx {
+            //             stack_idx.push(open.idx);
+            //             do_next_open = true;
+            //         }
+            //         else {
+            //             if let Some(x) = stack_idx.pop() { close.linked_idx = x }
+            //             else { return Err(BracketsError::error_close(close)) }
+            //             while let Some(c_next) = enm_c.peek() {
+            //                 if c_next.idx > open.idx { break }
+            //                 if let Some(x) = stack_idx.pop() { enm_c.next().unwrap().linked_idx = x }
+            //                 else { return Err(BracketsError::error_close(*c_next)) }
+            //             }
+            //             do_next_close = true;
+            //         }
+            //     }
+            // }
+            // else if let Some(close) = c {
+            //     if let Some(x) = stack_idx.pop() { close.linked_idx = x }
+            //     else { return Err(BracketsError::error_close(close)) }
+            //     do_next_close = true;
+            // }
+            // else {
+            //     scan = false;
+            // }
         }
+        self.is_valid = Some(true);
         Ok(())
     }
 
@@ -373,7 +403,7 @@ impl Brackets {
                 .collect();
             if self.open_bks[1].idx > self.close_bks[0].idx {
                 // empty config => remove flag
-                self.open_bks[1].is_first = true;
+                self.open_bks[1].is_first = Some(true);
                 self.flags.retain(|f| *f != BracketFlag::HasConfig);
             } else {
                 let (end_index, map) = bk_regex::extract_config(&self.buffer[self.open_bks[0].idx..]);
@@ -394,7 +424,7 @@ impl Brackets {
                 self.flags.push(BracketFlag::HasValidConfig);
                 let firstb = self.open_bks.iter_mut().find(|o| o.idx > end_index);
                 if let Some(b) = firstb {
-                    b.is_first = true;
+                    b.is_first = Some(true);
                 }
             }
             self.root = BracketValue::Root(
@@ -403,7 +433,7 @@ impl Brackets {
             );
         }
         else {
-            self.open_bks[0].is_first = true;
+            self.open_bks[0].is_first = Some(true);
         }
         Ok(())
     }
@@ -696,6 +726,14 @@ impl Brackets {
         }
         None
     }
+
+    fn get_bounds_mut<'a>(&'a mut self) -> Vec<&'a mut BracketChunk> {
+        let mut list: Vec<&'a mut BracketChunk> = Vec::new();
+        self.open_bks.iter_mut().for_each(|o| list.push(o));
+        self.close_bks.iter_mut().for_each(|o| list.push(o));
+        list.sort();
+        list
+    }
 }
 
 #[cfg(test)]
@@ -761,14 +799,14 @@ mod tests_brackets {
             idx: 0,
             typ: BracketType::Simple,
             warning_code: 0,
-            is_first: true,
+            is_first: Some(true),
             linked_idx: 0
         };
         let chk2 = BracketChunk {
             idx: 0,
             typ: BracketType::Date,
             warning_code: 10,
-            is_first: false,
+            is_first: Some(false),
             linked_idx: 0
         };
         assert!(chk1 == chk2);
