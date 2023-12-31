@@ -1,4 +1,4 @@
-use std::collections::{HashMap};
+use std::collections::HashMap;
 
 use regex::Regex;
 
@@ -27,7 +27,7 @@ pub fn collect_bounds(s: &str, pattern: &str) -> Vec<BracketChunk> {
             idx: m.start(), 
             typ: guess_type(&m), 
             warning_code: Default::default(), 
-            is_first: if pattern == RE_OPEN { Some(false) } else { None }, 
+            is_open_first: if pattern == RE_OPEN { Some(false) } else { None }, 
             linked_idx: 0
         }
     }).collect()

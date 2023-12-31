@@ -40,6 +40,6 @@
                 description[|absolute| block 10]
             ]
         ]
-        [|[dbo].[other]|][test \[\]]
+        [:[dbo].[other]:][test \[\]]
     ]
 ]

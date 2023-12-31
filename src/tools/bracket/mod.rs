@@ -1,6 +1,6 @@
 /* sample text in data/db.bk */
 
-use std::{cmp::Ordering, collections::HashMap, fs::File, io::Read, ops::{RangeInclusive, DerefMut}, rc::Rc, borrow::BorrowMut};
+use std::{cmp::Ordering, collections::HashMap, fs::File, io::Read, ops::RangeInclusive, rc::Rc, cell::RefCell};
 
 use crate::tools::bracket::bk_error::{WARNING_ESCAPED, WARNING_FREE_TEXT};
 
@@ -41,11 +41,11 @@ pub struct Value {
 
 #[derive(Debug, Clone)]
 pub enum BracketValue {
-    Root(Rc<BracketValue>, Rc<BracketValue>),
-    Obj(Value, Vec<Rc<BracketValue>>),
-    Val(Value, Rc<BracketValue>),
-    Array(Vec<Rc<BracketValue>>),
-    Prop(Value, Value),
+    Root(Rc<RefCell<BracketValue>>, Rc<RefCell<BracketValue>>),
+    Val(Rc<RefCell<Value>>, Rc<BracketValue>),
+    Doc(Rc<RefCell<Vec<Rc<BracketValue>>>>),
+    Obj(Rc<RefCell<Value>>, Rc<Vec<Rc<BracketValue>>>),
+    Prop(Rc<RefCell<Value>>, Rc<RefCell<Value>>),
     NoVal,
 }
 
@@ -93,7 +93,7 @@ pub struct BracketChunk {
     pub linked_idx: usize,
     pub typ: BracketType,
     pub warning_code: usize,
-    pub is_first: Option<bool>
+    pub is_open_first: Option<bool>
 }
 
 impl PartialEq for BracketChunk {
@@ -148,6 +148,24 @@ impl BracketChunk {
 
     pub fn is_free_text(&self, free_text_ranges: &Vec<RangeInclusive<usize>>) -> bool {
         free_text_ranges.iter().any(|r| r.contains(&self.idx))
+    }
+
+    fn get_value_index(&self) -> usize {
+        if self.is_open_first.is_some() {
+            return match self.typ {
+                BracketType::FreeText(s) => self.idx + s.quantity + 1,
+                BracketType::List(s) => self.idx + s + 1,
+                BracketType::Date => self.idx + TOKEN_DATE.len(),
+                BracketType::Int => self.idx + TOKEN_INT.len(),
+                BracketType::Real => self.idx + TOKEN_REAL.len(),
+                _ => self.idx + 1
+            }
+        }
+        return match self.typ {
+            BracketType::FreeText(s) => self.idx - s.quantity - 1,
+            BracketType::List(s) => self.idx - s - 1,
+            _ => self.idx - 1
+        }
     }
 }
 
@@ -204,58 +222,59 @@ impl Brackets {
 
     pub fn build_from_file(file: &mut File) -> Result<Brackets, BracketsError> {
         let mut buf: String = Default::default();
-        if let Ok(_) = file.read_to_string(&mut buf) {
+        let result = file.read_to_string(&mut buf);
+        if let Ok(_) = result {
             return Brackets::build_from_string(buf);
         }
 
-        Ok(Default::default())
+        Err(BracketsError::new(format!("Could not read file: {}", result.err().unwrap()).as_str()))
     }
 
     pub fn default_props() -> Vec<BracketValue> {
         return vec![
             BracketValue::Prop(
-                Value {
+                Rc::new(RefCell::new(Value {
                     index: 0,
                     string: "name".to_owned(),
-                },
+                })),
                 Default::default(),
             ),
             BracketValue::Prop(
-                Value {
+                Rc::new(RefCell::new(Value {
                     index: 1,
                     string: "version".to_owned(),
-                },
+                })),
                 Default::default(),
             ),
             BracketValue::Prop(
-                Value {
+                Rc::new(RefCell::new(Value {
                     index: 2,
                     string: "trimming".to_owned(),
-                },
-                Value {
+                })),
+                Rc::new(RefCell::new(Value {
                     index: 0,
                     string: "start".to_owned(),
-                },
+                })),
             ),
             BracketValue::Prop(
-                Value {
+                Rc::new(RefCell::new(Value {
                     index: 3,
                     string: "allow empty free text".to_owned(),
-                },
-                Value {
+                })),
+                Rc::new(RefCell::new(Value {
                     index: 0,
                     string: false.to_string(),
-                },
+                })),
             ),
             BracketValue::Prop(
-                Value {
+                Rc::new(RefCell::new(Value {
                     index: 4,
                     string: "closure mode".to_owned(),
-                },
-                Value {
+                })),
+                Rc::new(RefCell::new(Value {
                     index: 0,
                     string: "raw".to_owned(),
-                },
+                })),
             ),
         ];
     }
@@ -288,6 +307,19 @@ impl Brackets {
         ok
     }
 
+    pub fn get_start_index(&self) -> usize {
+        let mut start_index: usize = 0;
+        let mut enm = self.open_bks.iter().peekable();
+        while let Some(bk) = enm.peek() {
+            if let Some(false) | None = bk.is_open_first { enm.next(); }
+            else {
+                start_index = bk.idx;
+                break;
+            }
+        }
+        start_index
+    }
+
     fn process_buffer(&mut self) -> Result<(), BracketsError> {
         self.is_processing = true;
         self.reset();
@@ -296,6 +328,7 @@ impl Brackets {
             self.is_valid = Some(false);
             return Err(e)
         }
+        self.build_values(None, None)?;
         Ok(())
     }
 
@@ -318,7 +351,7 @@ impl Brackets {
         self.collect_close_bounds();
         self.remove_non_bracket_bounds();
         self.is_valid = Some(self.open_bks.len() == self.close_bks.len());
-        self.try_build_config()?;
+        self.init_root()?;
         self.validate()?;
         Ok(())
     }
@@ -326,28 +359,17 @@ impl Brackets {
     fn link_bounds(&mut self) -> Result<(), BracketsError> {
         let mut scan = true;
         let mut stack_idx: Vec<usize> = Vec::new();
-        // let mut enm_o = self.open_bks.iter_mut().peekable();
-        // let mut enm_c = self.close_bks.iter_mut().peekable();
-        // while let Some(o) = enm_o.peek() {
-        //     if !o.is_first { enm_o.next(); }
-        //     else { break }
-        // }
-        // while let Some(c) = enm_c.peek() {
-        //     if enm_o.peek().unwrap().idx > c.idx { enm_c.next(); }
-        //     else { break }
-        // }
-        // let mut do_next_open = true;
-        // let mut do_next_close = true;
+        let start_index = self.get_start_index();
         let all_bks = self.get_bounds_mut();
         let mut enm = all_bks.into_iter().peekable();
-        while let Some(bk) = enm.peek() {
-            if let Some(false) = bk.is_first { enm.next(); }
-            else { break }
-        }
         
         while scan {
             if let Some(bk) = enm.next() {
-                if bk.is_first.is_some() { stack_idx.push(bk.idx) }
+                if bk.idx < start_index { continue; }
+                if bk.warning_code == WARNING_MASK {
+                    todo!()
+                }
+                if bk.is_open_first.is_some() { stack_idx.push(bk.idx) }
                 else {
                     if let Some(x) = stack_idx.pop() { bk.linked_idx = x }
                     else { return Err(BracketsError::error_close(bk)) }
@@ -356,54 +378,64 @@ impl Brackets {
             else {
                 scan = false
             }
-            // let o = if do_next_open { enm_o.next() } else { None };
-            // let c = if do_next_close { enm_c.next() } else { None };
-            // do_next_open = false;
-            // do_next_close = false;
-            // if let Some(open) = o {
-            //     if let Some(close) = c {
-            //         if open.idx < close.idx {
-            //             stack_idx.push(open.idx);
-            //             do_next_open = true;
-            //         }
-            //         else {
-            //             if let Some(x) = stack_idx.pop() { close.linked_idx = x }
-            //             else { return Err(BracketsError::error_close(close)) }
-            //             while let Some(c_next) = enm_c.peek() {
-            //                 if c_next.idx > open.idx { break }
-            //                 if let Some(x) = stack_idx.pop() { enm_c.next().unwrap().linked_idx = x }
-            //                 else { return Err(BracketsError::error_close(*c_next)) }
-            //             }
-            //             do_next_close = true;
-            //         }
-            //     }
-            // }
-            // else if let Some(close) = c {
-            //     if let Some(x) = stack_idx.pop() { close.linked_idx = x }
-            //     else { return Err(BracketsError::error_close(close)) }
-            //     do_next_close = true;
-            // }
-            // else {
-            //     scan = false;
-            // }
         }
+        
+        let mut map_clos: HashMap<usize, usize> = HashMap::new();
+        self.close_bks.iter().filter(|c| c.idx > start_index).for_each(|c| {
+            map_clos.insert(c.linked_idx, c.idx);
+        });
+        self.open_bks.iter_mut().filter(|o| o.idx >= start_index).for_each(|o| {
+            o.linked_idx = *map_clos.get(&o.idx).unwrap();
+        });
+
         self.is_valid = Some(true);
         Ok(())
     }
 
-    fn try_build_config(&mut self) -> Result<(), BracketsError> {
-        if self.flags.contains(&BracketFlag::HasConfig) {
-            let key = Value {
-                index: 0,
-                string: "@".to_owned(),
+    fn build_values(&mut self, p: Option<Rc<RefCell<BracketValue>>>, s: Option<usize>) -> Result<(), BracketsError>
+    {
+        if p.is_none() {
+            let mut start_index = self.get_start_index();
+            let doc = match &self.root {
+                BracketValue::Root(_, d) => d,
+                _ => unreachable!()
             };
-            let mut props: Vec<Rc<BracketValue>> = Brackets::default_props()
-                .into_iter()
-                .map(|v| Rc::new(v))
-                .collect();
+            self.build_values(Some(Rc::clone(doc)), Some(start_index))?;
+            return Ok(())
+        }
+
+        let parent = p.unwrap();
+        let p_start = s.unwrap();
+        let open_parent = self.open_bks.iter().find(|o| o.idx == p_start).unwrap();
+        let close_parent = self.close_bks.iter().find(|c| c.idx == open_parent.linked_idx).unwrap();
+        let found = self.open_bks.iter().find(|o| o.idx < p_start && open_parent.linked_idx > p_start);
+        if found.is_none() {
+            match *parent.borrow() {
+                BracketValue::Prop(_, ref v) => {
+                    let start = open_parent.get_value_index();
+                    let end = close_parent.get_value_index();
+                    v.borrow_mut().string = self.buffer[start..=end].to_owned();
+                },
+                _ => {}
+            };
+        }
+        Ok(())
+    }
+
+    fn init_root(&mut self) -> Result<(), BracketsError> {
+        let mut props: Vec<Rc<BracketValue>> = Brackets::default_props()
+            .into_iter()
+            .map(|v| Rc::new(v))
+            .collect();
+        let key = Value {
+            index: 0,
+            string: "@".to_owned(),
+        };
+        let doc = BracketValue::Doc(Rc::new(RefCell::new(Vec::new())));
+        if self.flags.contains(&BracketFlag::HasConfig) {
             if self.open_bks[1].idx > self.close_bks[0].idx {
                 // empty config => remove flag
-                self.open_bks[1].is_first = Some(true);
+                self.open_bks[1].is_open_first = Some(true);
                 self.flags.retain(|f| *f != BracketFlag::HasConfig);
             } else {
                 let (end_index, map) = bk_regex::extract_config(&self.buffer[self.open_bks[0].idx..]);
@@ -414,8 +446,8 @@ impl Brackets {
                     .iter()
                     .map(|pair| {
                         Rc::new(BracketValue::Prop(
-                            Value { index: 0, string: pair.0.clone() },
-                            Value { index: 0, string: pair.1.clone() },
+                            Rc::new(RefCell::new(Value { index: 0, string: pair.0.clone() })),
+                            Rc::new(RefCell::new(Value { index: 0, string: pair.1.clone() })),
                         ))
                     })
                     .collect();
@@ -424,17 +456,17 @@ impl Brackets {
                 self.flags.push(BracketFlag::HasValidConfig);
                 let firstb = self.open_bks.iter_mut().find(|o| o.idx > end_index);
                 if let Some(b) = firstb {
-                    b.is_first = Some(true);
+                    b.is_open_first = Some(true);
                 }
             }
-            self.root = BracketValue::Root(
-                Rc::new(BracketValue::Obj(key, props)),
-                Rc::new(Default::default()),
-            );
         }
         else {
-            self.open_bks[0].is_first = Some(true);
+            self.open_bks[0].is_open_first = Some(true);
         }
+        self.root = BracketValue::Root(
+            Rc::new(RefCell::new(BracketValue::Obj(Rc::new(RefCell::new(key)), Rc::new(props)))),
+            Rc::new(RefCell::new(doc)),
+        );
         Ok(())
     }
 
@@ -572,10 +604,10 @@ impl Brackets {
             x += 1;
             if let Some(code) = warning {
                 self.open_bks[index].warning_code = code;
-                println!("warning {} broke on {}", code, index + 1);
+                // println!("warning {} broke on {}", code, index + 1);
                 continue;
             }
-            println!("broke on {}", index + 1);
+            //println!("broke on {}", index + 1);
             let close_bk =
                 self.extract_free_text_range(index, real_open_bks, &mut free_text_ranges);
             if let Some(c) = close_bk {
@@ -616,7 +648,7 @@ impl Brackets {
         let found = self.find_close_bk(&self.open_bks[index]);
         if let Some(cbk) = found {
             let start_idx = self.open_bks[index].idx;
-            if cbk == self.open_bks[index] || cbk.idx == start_idx + 2 {
+            if cbk.idx == self.open_bks[index].idx || cbk.idx == start_idx + 2 {
                 let mut obk = self.open_bks[index].clone();
                 obk.typ = Default::default();
                 real_open_bk.push(obk);
@@ -682,11 +714,7 @@ impl Brackets {
                 ft_char = Some(COMMA_CHAR);
                 nb_ft_char = size;
             }
-            _ => {
-                if !self.is_valid.unwrap_or(false) {
-                    return None;
-                }
-            }
+            _ => { }
         }
         if let Some(chr) = ft_char {
             let b = self.find_free_text_end(open_bk.idx, chr, nb_ft_char);
@@ -696,7 +724,7 @@ impl Brackets {
             return b;
         }
 
-        todo!()
+        None
     }
 
     fn find_free_text_end(&self, start: usize, chr: char, size: usize) -> Option<BracketChunk> {
@@ -799,14 +827,14 @@ mod tests_brackets {
             idx: 0,
             typ: BracketType::Simple,
             warning_code: 0,
-            is_first: Some(true),
+            is_open_first: Some(true),
             linked_idx: 0
         };
         let chk2 = BracketChunk {
             idx: 0,
             typ: BracketType::Date,
             warning_code: 10,
-            is_first: Some(false),
+            is_open_first: Some(false),
             linked_idx: 0
         };
         assert!(chk1 == chk2);
@@ -822,8 +850,8 @@ mod tests_brackets {
         if let Ok(mut f) = file {
             let b = Brackets::build_from_file(f.borrow_mut()).unwrap();
             println!("{}", b);
-            assert_eq!(b.get_nb_chunks(), 33);
-            assert_eq!(b.get_state(), "Broken");
+            assert_eq!(b.get_nb_chunks(), 34);
+            assert_eq!(b.get_state(), "Ok");
         }
     }
 
