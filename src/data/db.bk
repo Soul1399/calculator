@@ -1,7 +1,7 @@
 @[
     name[trees]
     version[1]
-    trimming[]
+    trimming[start]
 ]
 
 [

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use regex::Regex;
 
-use super::{RE_OPEN_START, RE_OPEN_CONFIG, RE_END, TOKEN_INT, BracketType, TOKEN_DATE, TOKEN_REAL, OPEN, TOKEN_PIPE, TOKEN_COLON, TOKEN_COMMA, TOKEN_COLON_END, TOKEN_PIPE_END, BracketChunk, CharSlice, ESCAPE_CHAR, CLOSE, CONFIG_NAME, CONFIG_VERSION, CONFIG_ALLOW_EMPTY_FT, CONFIG_CLOSURE_MODE, CONFIG_TRIMMING, RE_OPEN};
+use super::{RE_OPEN_START, RE_OPEN_CONFIG, RE_END, TOKEN_INT, BracketType, TOKEN_DATE, TOKEN_REAL, OPEN, TOKEN_PIPE, TOKEN_COLON, TOKEN_COMMA, TOKEN_COLON_END, TOKEN_PIPE_END, BracketChunk, CharSlice, ESCAPE_CHAR, CLOSE, CONFIG_NAME, CONFIG_VERSION, CONFIG_ALLOW_EMPTY_FT, CONFIG_CLOSURE_MODE, CONFIG_TRIMMING, RE_OPEN, CONFIG_CACHE, TOKEN_COMMA_END};
 
 pub fn match_simple_start(s: &str) -> bool {
     let re_start = Regex::new(RE_OPEN_START).unwrap();
@@ -85,12 +85,15 @@ pub fn guess_close_type(m: &regex::Match<'_>) -> BracketType {
     if s.ends_with(TOKEN_PIPE_END) || s.ends_with(TOKEN_COLON_END) {
         return BracketType::FreeText(CharSlice { start: m.start(), quantity: s.len() - 1, character: s.chars().next().unwrap() });
     }
+    if s.ends_with(TOKEN_COMMA_END) {
+        return BracketType::List(s.len() - 1);
+    }
     
     BracketType::Simple
 }
 
 pub fn extract_config(s: &str) -> (usize, HashMap<String, String>) {
-    let props = vec![CONFIG_NAME, CONFIG_VERSION, CONFIG_ALLOW_EMPTY_FT, CONFIG_CLOSURE_MODE, CONFIG_TRIMMING];
+    let props = vec![CONFIG_NAME, CONFIG_VERSION, CONFIG_ALLOW_EMPTY_FT, CONFIG_CLOSURE_MODE, CONFIG_CACHE, CONFIG_TRIMMING];
     let patterns: Vec<String> = props
         .iter()
         .map(|s| format!(r"({0}\[(?<{1}>[\w\s]*)\])?", s, s.replace(" ", "_")))
