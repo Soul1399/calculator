@@ -42,16 +42,102 @@ pub struct Value {
 #[derive(Debug, Clone)]
 pub enum BracketValue {
     Root(Rc<RefCell<BracketValue>>, Rc<RefCell<BracketValue>>),
-    Val(Rc<RefCell<Value>>, Rc<BracketValue>),
     Doc(Rc<RefCell<Vec<Rc<BracketValue>>>>),
-    Obj(Rc<RefCell<Value>>, Rc<Vec<Rc<BracketValue>>>),
-    Prop(Rc<RefCell<Value>>, Rc<RefCell<Value>>),
+    Array(Rc<RefCell<Vec<Rc<BracketValue>>>>),
+    Obj(Rc<RefCell<Value>>, Rc<RefCell<Vec<Rc<BracketValue>>>>),
+    Prop(Rc<RefCell<Value>>, Rc<BracketValue>),
+    Str(Rc<RefCell<String>>),
+    Int(Rc<RefCell<isize>>),
+    Real(Rc<RefCell<f64>>),
     NoVal,
 }
 
 impl Default for BracketValue {
     fn default() -> Self {
         BracketValue::NoVal
+    }
+}
+
+impl BracketValue {
+    pub fn init_value(&mut self, typ: &BracketType) -> bool {
+        if let BracketType::Simple = typ { return false }
+
+        let new_value = match typ {
+            BracketType::Date => { todo!() },
+            BracketType::List(_) => { todo!() },
+            BracketType::Int => { BracketValue::Int(Default::default()) },
+            BracketType::Real => { BracketValue::Real(Default::default()) },
+            BracketType::FreeText(_) => { BracketValue::Str(Default::default()) },
+            _ => unreachable!()
+        };
+        match self {
+            BracketValue::Doc(ref vc) | BracketValue::Array(ref vc) => {
+                vc.borrow_mut().push(Rc::new(new_value));
+            },
+            BracketValue::Prop(_, ref mut v) => {
+                *v = Rc::new(new_value);
+            },
+            _ => { return false }
+        };
+
+        true
+    }
+
+    pub fn set_value(&self, value: &str) {
+        match self {
+            BracketValue::Prop(_, v) => {
+                match v.as_ref() {
+                    BracketValue::Str(_) | BracketValue::Int(_) | BracketValue::Real(_) => {
+                        v.set_value(value);
+                    },
+                    _ => unreachable!()
+                }
+            },
+            BracketValue::Str(s) => {
+                *s.borrow_mut() = value.to_owned();
+            },
+            BracketValue::Int(i) => {
+                *i.borrow_mut() = str::parse::<isize>(value).unwrap();
+            },
+            BracketValue::Real(r) => {
+                *r.borrow_mut() = str::parse::<f64>(value).unwrap();
+            },
+            BracketValue::Doc(vc) | BracketValue::Array(vc) => {
+                vc.borrow_mut()[0].set_value(value);
+            }
+            _ => {}
+        };
+    }
+
+    pub fn reinit_value_str(&mut self) {
+        let str_val = Rc::new(BracketValue::Str(Rc::new(RefCell::new(Default::default()))));
+        match self {
+            BracketValue::Doc(ref vc) | BracketValue::Array(ref vc) => {
+                vc.borrow_mut().push(str_val);
+            },
+            BracketValue::Prop(_, v) => {
+                *v = str_val;
+            },
+            _ => {}
+        }
+    }
+
+    pub fn init_obj(&mut self, name: &str) -> Rc<BracketValue> {
+        let obj = Rc::new(BracketValue::Obj(
+            Rc::new(RefCell::new(Value { index: 0, string: name.to_owned() })),
+            Rc::new(Default::default())
+        ));
+        let rc = Rc::clone(&obj);
+        match self {
+            BracketValue::Doc(vc) 
+            | BracketValue::Array(vc)
+            | BracketValue::Obj(_, vc) => {
+                vc.borrow_mut().push(obj);
+            },
+            _ => {}
+        }
+
+        rc
     }
 }
 
@@ -176,6 +262,7 @@ pub struct Brackets {
     all_close_bks: Vec<BracketChunk>,
     open_bks: Vec<BracketChunk>,
     close_bks: Vec<BracketChunk>,
+    open_bks_hash: HashMap<usize, usize>,
     flags: Vec<BracketFlag>,
     is_processing: bool,
     is_valid: Option<bool>,
@@ -200,6 +287,7 @@ impl Default for Brackets {
         Brackets {
             buffer: Default::default(),
             open_bks: Default::default(),
+            open_bks_hash: HashMap::new(),
             close_bks: Default::default(),
             all_open_bks: Default::default(),
             all_close_bks: Default::default(),
@@ -251,30 +339,21 @@ impl Brackets {
                     index: 2,
                     string: "trimming".to_owned(),
                 })),
-                Rc::new(RefCell::new(Value {
-                    index: 0,
-                    string: "start".to_owned(),
-                })),
+                Rc::new(BracketValue::Str(Rc::new(RefCell::new("start".to_owned()))))
             ),
             BracketValue::Prop(
                 Rc::new(RefCell::new(Value {
                     index: 3,
                     string: "allow empty free text".to_owned(),
                 })),
-                Rc::new(RefCell::new(Value {
-                    index: 0,
-                    string: false.to_string(),
-                })),
+                Rc::new(BracketValue::Str(Rc::new(RefCell::new(false.to_string()))))
             ),
             BracketValue::Prop(
                 Rc::new(RefCell::new(Value {
                     index: 4,
                     string: "closure mode".to_owned(),
                 })),
-                Rc::new(RefCell::new(Value {
-                    index: 0,
-                    string: "raw".to_owned(),
-                })),
+                Rc::new(BracketValue::Str(Rc::new(RefCell::new("raw".to_owned()))))
             ),
         ];
     }
@@ -384,8 +463,9 @@ impl Brackets {
         self.close_bks.iter().filter(|c| c.idx > start_index).for_each(|c| {
             map_clos.insert(c.linked_idx, c.idx);
         });
-        self.open_bks.iter_mut().filter(|o| o.idx >= start_index).for_each(|o| {
+        self.open_bks.iter_mut().enumerate().filter(|(_,o)| o.idx >= start_index).for_each(|(u,o)| {
             o.linked_idx = *map_clos.get(&o.idx).unwrap();
+            self.open_bks_hash.insert(o.idx, u);
         });
 
         self.is_valid = Some(true);
@@ -395,7 +475,7 @@ impl Brackets {
     fn build_values(&mut self, p: Option<Rc<RefCell<BracketValue>>>, s: Option<usize>) -> Result<(), BracketsError>
     {
         if p.is_none() {
-            let mut start_index = self.get_start_index();
+            let start_index = self.get_start_index();
             let doc = match &self.root {
                 BracketValue::Root(_, d) => d,
                 _ => unreachable!()
@@ -406,18 +486,31 @@ impl Brackets {
 
         let parent = p.unwrap();
         let p_start = s.unwrap();
-        let open_parent = self.open_bks.iter().find(|o| o.idx == p_start).unwrap();
+        let value_was_defined = self.define_value_type(Rc::clone(&parent), p_start);
+        let open_parent = &self.open_bks[*self.open_bks_hash.get(&p_start).unwrap()];
         let close_parent = self.close_bks.iter().find(|c| c.idx == open_parent.linked_idx).unwrap();
-        let found = self.open_bks.iter().find(|o| o.idx < p_start && open_parent.linked_idx > p_start);
-        if found.is_none() {
-            match *parent.borrow() {
-                BracketValue::Prop(_, ref v) => {
-                    let start = open_parent.get_value_index();
-                    let end = close_parent.get_value_index();
-                    v.borrow_mut().string = self.buffer[start..=end].to_owned();
-                },
-                _ => {}
-            };
+        let found = self.open_bks.iter().any(|o| open_parent.idx < o.idx && o.idx < close_parent.idx);
+        let start = open_parent.get_value_index();
+        let end = close_parent.get_value_index();
+        let value = &self.buffer[start..=end];
+        if !found {
+            if !value_was_defined {
+                parent.borrow_mut().reinit_value_str();
+            }
+            parent.borrow_mut().set_value(value);
+        }
+        else {
+            let obj = parent.borrow_mut().init_obj(value);
+            let mut children_it = self.open_bks.iter()
+                .filter(|o| open_parent.idx < o.idx && o.idx < close_parent.idx)
+                .peekable();
+            
+            let mut bypass_ranges: Vec<RangeInclusive<usize>> = Vec::new();
+            while children_it.peek().is_some() {
+                let child = children_it.next().unwrap();
+                if bypass_ranges.iter().any(|rg| rg.contains(&child.idx)) { continue; }
+                bypass_ranges.push(child.idx..=child.linked_idx);
+            }
         }
         Ok(())
     }
@@ -447,7 +540,7 @@ impl Brackets {
                     .map(|pair| {
                         Rc::new(BracketValue::Prop(
                             Rc::new(RefCell::new(Value { index: 0, string: pair.0.clone() })),
-                            Rc::new(RefCell::new(Value { index: 0, string: pair.1.clone() })),
+                            Rc::new(BracketValue::Str(Rc::new(RefCell::new(pair.1.clone())))),
                         ))
                     })
                     .collect();
@@ -464,7 +557,7 @@ impl Brackets {
             self.open_bks[0].is_open_first = Some(true);
         }
         self.root = BracketValue::Root(
-            Rc::new(RefCell::new(BracketValue::Obj(Rc::new(RefCell::new(key)), Rc::new(props)))),
+            Rc::new(RefCell::new(BracketValue::Obj(Rc::new(RefCell::new(key)), Rc::new(RefCell::new(props))))),
             Rc::new(RefCell::new(doc)),
         );
         Ok(())
@@ -761,6 +854,11 @@ impl Brackets {
         self.close_bks.iter_mut().for_each(|o| list.push(o));
         list.sort();
         list
+    }
+
+    fn define_value_type(&self, p: Rc<RefCell<BracketValue>>, idx: usize) -> bool {
+        let o = &self.open_bks[*self.open_bks_hash.get(&idx).unwrap()];
+        p.borrow_mut().init_value(&o.typ)
     }
 }
 
