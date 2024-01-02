@@ -563,67 +563,75 @@ impl Brackets {
         let parent = p.unwrap();
         let p_start = s.unwrap();
         let open_parent = &self.open_bks[*self.open_bks_hash.get(&p_start).unwrap()];
-        let close_parent = &self.close_bks[*self.close_bks_hash.get(&open_parent.linked_idx).unwrap()];
-        let found = self.open_bks.iter().any(|o| open_parent.idx < o.idx && o.idx < close_parent.idx);
+        let found = self.open_bks.iter().any(|o| open_parent.idx < o.idx && o.idx < open_parent.linked_idx);
         let start = open_parent.get_inside_value_index();
-        let end = close_parent.get_inside_value_index();
-        let trim_mode = self.config.get(CONFIG_TRIMMING).unwrap();
+        
         if !found {
-            self.define_single_value_type(Rc::clone(&parent), p_start);
-            let mut id_val = BracketId::new_id(start, end);
-            if !self.is_cache_off() {
-                id_val.id_value = Some(id_val.extract_string_from(&self.buffer, trim_mode).to_owned());
-            }
-            if id_val.get_length(&self.buffer, trim_mode) == 0 {
-                parent.borrow_mut().set_noval(p_start == root_start_index);
-            }
-            else {
-                parent.borrow_mut().set_str_value(&id_val);
-            }
+            let close_parent = &self.close_bks[*self.close_bks_hash.get(&open_parent.linked_idx).unwrap()];
+            let end = close_parent.get_inside_value_index();
+            self.build_single_value(&parent, p_start, start, end, root_start_index);
         }
         else {
-            let mut children_it = self.open_bks.iter()
-                .filter(|o| open_parent.idx < o.idx && o.idx < close_parent.idx)
-                .peekable();
-        
-            let mut bypass_ranges: Vec<RangeInclusive<usize>> = Vec::new();
-            let mut all_ids_empty = true;
-            let mut child_map: Vec<(usize, Rc<RefCell<BracketValue>>)> = Vec::new();
-            while children_it.peek().is_some() {
-                let child = children_it.next().unwrap();
-
-                if bypass_ranges.iter().any(|rg| rg.contains(&child.idx)) { continue; }
-
-                let child_close = &self.close_bks[*self.close_bks_hash.get(&child.linked_idx).unwrap()];
-                bypass_ranges.push(child.get_inside_value_index()..=child_close.get_outside_value_index());
-                bypass_ranges.sort_by_key(|x| *x.start());
-
-                let key_end = child.get_outside_value_index();
-                let mut key_start = start;
-                if bypass_ranges.len() > 0 {
-                    key_start = *bypass_ranges.last().unwrap().end();
-                }
-
-                let mut id_val = BracketId::new_id(key_start, key_end);
-                if id_val.get_length(&self.buffer, trim_mode) > 0 {
-                    all_ids_empty = false;
-                }
-                else if !self.is_cache_off() {
-                    id_val.id_value = Some(id_val.extract_string_from(&self.buffer, trim_mode).to_owned());
-                }
-                let val = parent.borrow_mut().init_obj(id_val);
-                let obj = match val.as_ref() {
-                    BracketValue::Obj(_, a) => Rc::clone(a),
-                    _ => unreachable!()
-                };
-                child_map.push((child.idx, obj));
-            }
-
-            for (s, o) in child_map {
-                self.build_values(root_start_index, Some(o), Some(s))?;
-            }
+            self.build_child_values(open_parent.idx, open_parent.linked_idx, start, parent, root_start_index)?;
         }
         Ok(())
+    }
+
+    fn build_child_values(&mut self, open_parent_idx: usize, close_parent_idx: usize, start: usize, parent: Rc<RefCell<BracketValue>>, root_start_index: usize) -> Result<(), BracketsError> {
+        let mut children_it = self.open_bks.iter()
+            .filter(|o| open_parent_idx < o.idx && o.idx < close_parent_idx)
+            .peekable();
+        let mut bypass_ranges: Vec<RangeInclusive<usize>> = Vec::new();
+        let mut all_ids_empty = true;
+        let mut child_map: Vec<(usize, Rc<RefCell<BracketValue>>)> = Vec::new();
+        let trim_mode = self.config.get(CONFIG_TRIMMING).unwrap();
+        while children_it.peek().is_some() {
+            let child = children_it.next().unwrap();
+
+            if bypass_ranges.iter().any(|rg| rg.contains(&child.idx)) { continue; }
+
+            let child_close = &self.close_bks[*self.close_bks_hash.get(&child.linked_idx).unwrap()];
+            bypass_ranges.push(child.get_inside_value_index()..=child_close.get_outside_value_index());
+            bypass_ranges.sort_by_key(|x| *x.start());
+
+            let key_end = child.get_outside_value_index();
+            let mut key_start = start;
+            if bypass_ranges.len() > 0 {
+                key_start = *bypass_ranges.last().unwrap().end();
+            }
+
+            let mut id_val = BracketId::new_id(key_start, key_end);
+            if id_val.get_length(&self.buffer, trim_mode) > 0 {
+                all_ids_empty = false;
+            }
+            else if !self.is_cache_off() {
+                id_val.id_value = Some(id_val.extract_string_from(&self.buffer, trim_mode).to_owned());
+            }
+            let val = parent.borrow_mut().init_obj(id_val);
+            let obj = match val.as_ref() {
+                BracketValue::Obj(_, a) => Rc::clone(a),
+                _ => unreachable!()
+            };
+            child_map.push((child.idx, obj));
+        }
+        Ok(for (s, o) in child_map {
+            self.build_values(root_start_index, Some(o), Some(s))?;
+        })
+    }
+
+    fn build_single_value(&mut self, parent: &Rc<RefCell<BracketValue>>, p_start: usize, start: usize, end: usize, root_start_index: usize) {
+        let trim_mode = self.config.get(CONFIG_TRIMMING).unwrap();
+        self.define_single_value_type(Rc::clone(parent), p_start);
+        let mut id_val = BracketId::new_id(start, end);
+        if !self.is_cache_off() {
+            id_val.id_value = Some(id_val.extract_string_from(&self.buffer, trim_mode).to_owned());
+        }
+        if id_val.get_length(&self.buffer, trim_mode) == 0 {
+            parent.borrow_mut().set_noval(p_start == root_start_index);
+        }
+        else {
+            parent.borrow_mut().set_str_value(&id_val);
+        }
     }
 
     fn init_root(&mut self) -> Result<(), BracketsError> {
