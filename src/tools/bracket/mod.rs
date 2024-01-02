@@ -98,7 +98,7 @@ pub struct BkArray {
 
 #[derive(Debug, Clone)]
 pub enum BracketValue {
-    Root(Rc<RefCell<BracketValue>>, Rc<RefCell<BkDoc>>),
+    Root(Rc<HashMap<String, String>>, BkDoc),
     Array(Rc<RefCell<BkArray>>),
     Obj(Rc<RefCell<BracketId>>, Rc<RefCell<BracketValue>>),
     Prop(Rc<RefCell<BracketId>>, Rc<BracketValue>),
@@ -345,7 +345,7 @@ pub struct Brackets {
     is_processing: bool,
     is_valid: Option<bool>,
     pub root: BracketValue,
-    pub config: HashMap<String, String>,
+    pub config: Rc<HashMap<String, String>>
 }
 
 impl std::fmt::Display for Brackets {
@@ -371,10 +371,10 @@ impl Default for Brackets {
             all_open_bks: Default::default(),
             all_close_bks: Default::default(),
             flags: Default::default(),
-            root: BracketValue::Root(Rc::new(Default::default()), Rc::new(Default::default())),
+            root: BracketValue::Root(Default::default(), Default::default()),
             is_processing: false,
             is_valid: None,
-            config: HashMap::new(),
+            config: Default::default(),
         }
     }
 }
@@ -432,6 +432,11 @@ impl Brackets {
 
     pub fn is_cache_off(&self) -> bool {
         self.config.get(CONFIG_CACHE).unwrap_or(&String::new()) != CACHE_MODE_ON
+    }
+
+    pub fn get_trim_mode(&self) -> &str {
+        if let Some(t) = self.config.get(CONFIG_TRIMMING) { return t }
+        return TRIM_MODE_START
     }
 
     pub fn get_state(&self) -> String {
@@ -553,7 +558,7 @@ impl Brackets {
     fn build_values(&mut self, root_start_index: usize, p: Option<Rc<RefCell<BracketValue>>>, s: Option<usize>) -> Result<(), BracketsError> {
         if p.is_none() {
             let doc_value = match &self.root {
-                BracketValue::Root(_, d) => Rc::clone(&d.borrow_mut().value),
+                BracketValue::Root(_, d) => Rc::clone(&d.value),
                 _ => unreachable!()
             };
             self.build_values(root_start_index, Some(doc_value), Some(root_start_index))?;
@@ -584,21 +589,19 @@ impl Brackets {
         let mut bypass_ranges: Vec<RangeInclusive<usize>> = Vec::new();
         let mut all_ids_empty = true;
         let mut child_map: Vec<(usize, Rc<RefCell<BracketValue>>)> = Vec::new();
-        let trim_mode = self.config.get(CONFIG_TRIMMING).unwrap();
+        let trim_mode = self.get_trim_mode();
         while children_it.peek().is_some() {
             let child = children_it.next().unwrap();
-
             if bypass_ranges.iter().any(|rg| rg.contains(&child.idx)) { continue; }
 
             let child_close = &self.close_bks[*self.close_bks_hash.get(&child.linked_idx).unwrap()];
-            bypass_ranges.push(child.get_inside_value_index()..=child_close.get_outside_value_index());
-            bypass_ranges.sort_by_key(|x| *x.start());
-
             let key_end = child.get_outside_value_index();
             let mut key_start = start;
             if bypass_ranges.len() > 0 {
                 key_start = *bypass_ranges.last().unwrap().end();
             }
+            bypass_ranges.push(child.get_inside_value_index()..=child_close.get_outside_value_index());
+            bypass_ranges.sort_by_key(|x| *x.start());
 
             let mut id_val = BracketId::new_id(key_start, key_end);
             if id_val.get_length(&self.buffer, trim_mode) > 0 {
@@ -620,7 +623,7 @@ impl Brackets {
     }
 
     fn build_single_value(&mut self, parent: &Rc<RefCell<BracketValue>>, p_start: usize, start: usize, end: usize, root_start_index: usize) {
-        let trim_mode = self.config.get(CONFIG_TRIMMING).unwrap();
+        let trim_mode = self.get_trim_mode();
         self.define_single_value_type(Rc::clone(parent), p_start);
         let mut id_val = BracketId::new_id(start, end);
         if !self.is_cache_off() {
@@ -635,13 +638,8 @@ impl Brackets {
     }
 
     fn init_root(&mut self) -> Result<(), BracketsError> {
-        let mut props: Vec<Rc<BracketValue>> = Brackets::default_props()
-            .into_iter()
-            .map(|v| Rc::new(v))
-            .collect();
-        let key = BracketId::new_value("@");
-        let doc = BkDoc {
-            name: self.config.get(CONFIG_NAME).unwrap().clone(), 
+        let mut doc = BkDoc {
+            name: String::new(), 
             value: Rc::new(RefCell::new(BracketValue::Array(Default::default())))
         };
         if self.flags.contains(&BracketFlag::HasConfig) {
@@ -654,17 +652,7 @@ impl Brackets {
                 if map.len() == 0 {
                     return Err(BracketsError::new(INVALID_CONFIG));
                 }
-                props = map
-                    .iter()
-                    .map(|pair| {
-                        Rc::new(BracketValue::Prop(
-                            Rc::new(RefCell::new(BracketId::new_value(pair.0.as_str()))),
-                            Rc::new(BracketValue::Str(Rc::new(RefCell::new(BracketId::new_value(pair.1))))),
-                        ))
-                    })
-                    .collect();
-
-                self.config = map;
+                self.config = Rc::new(map);
                 self.flags.push(BracketFlag::HasValidConfig);
                 let firstb = self.open_bks.iter_mut().find(|o| o.idx > end_index);
                 if let Some(b) = firstb {
@@ -675,12 +663,8 @@ impl Brackets {
         else {
             self.open_bks[0].is_open_first = Some(true);
         }
-        self.root = BracketValue::Root(
-            Rc::new(RefCell::new(BracketValue::Obj(
-                Rc::new(RefCell::new(key)), 
-                Rc::new(RefCell::new(BracketValue::Array(Rc::new(RefCell::new(BkArray { value: props })))))))),
-            Rc::new(RefCell::new(doc))
-        );
+        doc.name = self.config.get(CONFIG_NAME).unwrap_or(&"doc".to_owned()).clone();
+        self.root = BracketValue::Root(Rc::clone(&self.config), doc);
         Ok(())
     }
 
@@ -1080,6 +1064,15 @@ mod tests_brackets {
         if let Ok(mut f) = file {
             let b = Brackets::build_from_file(f.borrow_mut()).unwrap();
             assert!(b.config.len() > 0);
+        }
+    }
+
+    #[test]
+    fn obj_doc() {
+        let file = File::open("/home/soul/dev/rust/calculator/src/data/obj.bk");
+        if let Ok(mut f) = file {
+            let b = Brackets::build_from_file(f.borrow_mut()).unwrap();
+            assert!(b.is_valid.unwrap_or_default());
         }
     }
 }
