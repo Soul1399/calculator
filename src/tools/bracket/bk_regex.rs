@@ -73,8 +73,8 @@ pub fn guess_open_type(m: &regex::Match<'_>) -> BracketType {
     if s.starts_with(TOKEN_PIPE) || s.starts_with(TOKEN_COLON) {
         return BracketType::FreeText(CharSlice { start: m.start() + 1, quantity: s.len() - 1, character: s.chars().last().unwrap() });
     }
-    if s.starts_with(TOKEN_COMMA) {
-        return BracketType::List(s.len() - 1);
+    if s == TOKEN_COMMA {
+        return BracketType::List;
     }
     
     BracketType::Simple
@@ -85,8 +85,8 @@ pub fn guess_close_type(m: &regex::Match<'_>) -> BracketType {
     if s.ends_with(TOKEN_PIPE_END) || s.ends_with(TOKEN_COLON_END) {
         return BracketType::FreeText(CharSlice { start: m.start(), quantity: s.len() - 1, character: s.chars().next().unwrap() });
     }
-    if s.ends_with(TOKEN_COMMA_END) {
-        return BracketType::List(s.len() - 1);
+    if s == TOKEN_COMMA_END {
+        return BracketType::List;
     }
     
     BracketType::Simple

@@ -23,14 +23,15 @@ const RE_END: &str = r"]\s*$";
 const TOKEN_INT: &str = "[@int:";
 const TOKEN_DATE: &str = "[@date:";
 const TOKEN_REAL: &str = "[@real:";
-const RE_OPEN: &str = r"(\[(?:\|+|:+|,+|@int:|@date:|@real:)|\[)";
-const RE_CLOSE: &str = r"((?:\|+|:+|,+)]|])";
+const RE_OPEN: &str = r"(\[(?:\|+|:+|,|@int:|@date:|@real:)|\[)";
+const RE_CLOSE: &str = r"((?:\|+|:+|,)]|])";
 
 const CONFIG_NAME: &str = "name";
 const CONFIG_VERSION: &str = "version";
 const CONFIG_ALLOW_EMPTY_FT: &str = "allow empty free text";
 const CONFIG_CLOSURE_MODE: &str = "closure mode";
 const CLOSURE_MODE_RAW: &str = "raw";
+const CLOSURE_MODE_SMART: &str = "smart";
 const CONFIG_CACHE: &str = "cache";
 const CACHE_MODE_OFF: &str = "off";
 const CACHE_MODE_ON: &str = "on";
@@ -49,10 +50,11 @@ pub struct BracketId {
 }
 
 impl BracketId {
-    pub fn new_id(start: usize, end: usize) -> BracketId {
+    pub fn new_id(start: usize, end: usize, btype: BracketType) -> BracketId {
         let mut id: BracketId = Default::default();
         id.start = start;
         id.end = end;
+        id.btyp = btype;
         id
     }
     
@@ -82,6 +84,39 @@ impl BracketId {
         }
         
         slice.trim_start()
+    }
+
+    pub fn extract_int_from(&self, buffer: &str, trim_mode: &str) -> Option<isize> {
+        match self.btyp {
+            BracketType::Int => {},
+            _ => { return None }
+        }
+        let text = self.extract_string_from(buffer, trim_mode);
+        match str::parse::<isize>(text) {
+            Err(_) => None,
+            Ok(i) => Some(i)
+        }
+    }
+
+    pub fn extract_real_from(&self, buffer: &str, trim_mode: &str) -> Option<f64> {
+        match self.btyp {
+            BracketType::Real => {},
+            _ => { return None }
+        }
+        let text = self.extract_string_from(buffer, trim_mode);
+        match str::parse::<f64>(text) {
+            Err(_) => None,
+            Ok(f) => Some(f)
+        }
+    }
+
+    pub fn extract_list_from(&self, buffer: &str, trim_mode: &str) -> Option<Vec<String>> {
+        match self.btyp {
+            BracketType::List => {},
+            _ => { return None }
+        }
+        let text = self.extract_string_from(buffer, trim_mode);
+        Some(text.split(COMMA_CHAR).into_iter().map(|s| s.trim().to_owned()).collect())
     }
 }
 
@@ -117,7 +152,7 @@ impl Default for BracketValue {
 impl BracketValue {
     pub fn init_single_value(&mut self, typ: &BracketType) {
         let new_value = match typ {
-            BracketType::List(_) => { todo!() },
+            BracketType::List => { BracketValue::Array(Default::default()) },
             BracketType::Int => { BracketValue::Int(Default::default()) },
             BracketType::Real => { BracketValue::Real(Default::default()) },
             BracketType::Simple | BracketType::Date | BracketType::FreeText(_) => { BracketValue::Str(Default::default()) }
@@ -133,12 +168,12 @@ impl BracketValue {
         };
     }
 
-    pub fn set_str_value(&self, value: &BracketId) {
+    pub fn set_single_value(&self, value: &BracketId) {
         match self {
             BracketValue::Prop(_, v) => {
                 match v.as_ref() {
                     BracketValue::Str(_) | BracketValue::Int(_) | BracketValue::Real(_) => {
-                        v.set_str_value(value);
+                        v.set_single_value(value);
                     },
                     _ => unreachable!()
                 }
@@ -157,16 +192,12 @@ impl BracketValue {
                 *r.borrow_mut() = v;
             },
             BracketValue::Array(vc) => {
-                vc.borrow_mut().value[0].set_str_value(value);
+                if vc.borrow().value.len() > 0 {
+                    vc.borrow_mut().value[0].set_single_value(value);
+                }
             }
             _ => unreachable!()
         };
-
-        //true
-    }
-
-    pub fn set_id_value(&self, start: usize, end: usize) {
-
     }
 
     pub fn set_noval(&mut self, is_doc: bool) {
@@ -222,7 +253,7 @@ pub enum BracketType {
     Int,
     Date,
     Real,
-    List(usize),
+    List,
 }
 
 impl Default for BracketType {
@@ -305,7 +336,7 @@ impl BracketChunk {
         if self.is_open_first.is_some() {
             return match self.typ {
                 BracketType::FreeText(s) => s.start + s.quantity,
-                BracketType::List(s) => self.idx + s + 1,
+                BracketType::List => self.idx + 2,
                 BracketType::Date => self.idx + TOKEN_DATE.len(),
                 BracketType::Int => self.idx + TOKEN_INT.len(),
                 BracketType::Real => self.idx + TOKEN_REAL.len(),
@@ -320,7 +351,7 @@ impl BracketChunk {
         if self.is_open_first.is_none() {
             return match self.typ {
                 BracketType::FreeText(s) => s.start + s.quantity + 1,
-                BracketType::List(s) => self.idx + s + 1,
+                BracketType::List => self.idx + 2,
                 BracketType::Date => self.idx + TOKEN_DATE.len(),
                 BracketType::Int => self.idx + TOKEN_INT.len(),
                 BracketType::Real => self.idx + TOKEN_REAL.len(),
@@ -574,7 +605,7 @@ impl Brackets {
         if !found {
             let close_parent = &self.close_bks[*self.close_bks_hash.get(&open_parent.linked_idx).unwrap()];
             let end = close_parent.get_inside_value_index();
-            self.build_single_value(&parent, p_start, start, end, root_start_index);
+            self.build_single_value(p_start, &parent, start, end, p_start == root_start_index);
         }
         else {
             self.build_child_values(open_parent.idx, open_parent.linked_idx, start, parent, root_start_index)?;
@@ -603,7 +634,7 @@ impl Brackets {
             bypass_ranges.push(child.get_inside_value_index()..=child_close.get_outside_value_index());
             bypass_ranges.sort_by_key(|x| *x.start());
 
-            let mut id_val = BracketId::new_id(key_start, key_end);
+            let mut id_val = BracketId::new_id(key_start, key_end, Default::default());
             if id_val.get_length(&self.buffer, trim_mode) > 0 {
                 all_ids_empty = false;
             }
@@ -622,18 +653,18 @@ impl Brackets {
         })
     }
 
-    fn build_single_value(&mut self, parent: &Rc<RefCell<BracketValue>>, p_start: usize, start: usize, end: usize, root_start_index: usize) {
+    fn build_single_value(&mut self, p_start : usize, parent: &Rc<RefCell<BracketValue>>, start: usize, end: usize, is_parent_doc: bool) {
         let trim_mode = self.get_trim_mode();
-        self.define_single_value_type(Rc::clone(parent), p_start);
-        let mut id_val = BracketId::new_id(start, end);
+        let typ = self.define_single_value_type(Rc::clone(parent), p_start);
+        let mut id_val = BracketId::new_id(start, end, typ);
         if !self.is_cache_off() {
             id_val.id_value = Some(id_val.extract_string_from(&self.buffer, trim_mode).to_owned());
         }
         if id_val.get_length(&self.buffer, trim_mode) == 0 {
-            parent.borrow_mut().set_noval(p_start == root_start_index);
+            parent.borrow_mut().set_noval(is_parent_doc);
         }
         else {
-            parent.borrow_mut().set_str_value(&id_val);
+            parent.borrow_mut().set_single_value(&id_val);
         }
     }
 
@@ -786,7 +817,7 @@ impl Brackets {
                     break;
                 }
                 match bk.typ {
-                    BracketType::FreeText(_) | BracketType::List(_) => break,
+                    BracketType::FreeText(_) | BracketType::List => break,
                     _ => {
                         real_open_bks.push(bk.clone());
                     }
@@ -853,9 +884,9 @@ impl Brackets {
             } else {
                 let open_slice = match self.open_bks[index].typ {
                     BracketType::FreeText(slc) => slc,
-                    BracketType::List(size) => CharSlice {
+                    BracketType::List => CharSlice {
                         start: start_idx + 1,
-                        quantity: size,
+                        quantity: 1,
                         character: COMMA_CHAR,
                     },
                     _ => unreachable!(),
@@ -869,8 +900,8 @@ impl Brackets {
                                 open_slice.character == slc.character
                                     && open_slice.quantity == slc.quantity
                             }
-                            BracketType::List(size) => {
-                                open_slice.character == COMMA_CHAR && open_slice.quantity == size
+                            BracketType::List => {
+                                open_slice.character == COMMA_CHAR && open_slice.quantity == 1
                             }
                             _ => false,
                         });
@@ -886,7 +917,7 @@ impl Brackets {
                 }
                 let start = open_slice.start + open_slice.quantity;
                 let end = match cbk.typ {
-                    BracketType::FreeText(_) | BracketType::List(_) => cbk.idx - 1,
+                    BracketType::FreeText(_) | BracketType::List => cbk.idx - 1,
                     _ => unreachable!(),
                 };
                 free_text_ranges.push(start..=end);
@@ -908,9 +939,9 @@ impl Brackets {
                 ft_char = Some(slc.character);
                 nb_ft_char = slc.quantity;
             }
-            BracketType::List(size) => {
+            BracketType::List => {
                 ft_char = Some(COMMA_CHAR);
-                nb_ft_char = size;
+                nb_ft_char = 1;
             }
             _ => { }
         }
@@ -961,9 +992,10 @@ impl Brackets {
         list
     }
 
-    fn define_single_value_type(&self, p: Rc<RefCell<BracketValue>>, idx: usize) {
+    fn define_single_value_type(&self, p: Rc<RefCell<BracketValue>>, idx: usize) -> BracketType {
         let o = &self.open_bks[*self.open_bks_hash.get(&idx).unwrap()];
         p.borrow_mut().init_single_value(&o.typ);
+        o.typ.clone()
     }
 }
 

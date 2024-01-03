@@ -36,7 +36,7 @@ impl BracketsError {
     pub fn error_close(cbk: &BracketChunk) -> BracketsError {
         let typ = match cbk.typ {
             BracketType::FreeText(_) => "Free Text ",
-            BracketType::List(_) => "List ",
+            BracketType::List => "List ",
             _ => ""
         };
         
