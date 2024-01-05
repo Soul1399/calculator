@@ -121,6 +121,12 @@ impl BracketId {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct BkRoot {
+    pub config: Rc<HashMap<String, String>>,
+    pub doc: BkDoc
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct BkDoc {
     pub name: String,
     pub value: Rc<RefCell<BracketValue>>
@@ -133,7 +139,6 @@ pub struct BkArray {
 
 #[derive(Debug, Clone)]
 pub enum BracketValue {
-    Root(Rc<HashMap<String, String>>, BkDoc),
     Array(Rc<RefCell<BkArray>>),
     Obj(Rc<RefCell<BracketId>>, Rc<RefCell<BracketValue>>),
     Prop(Rc<RefCell<BracketId>>, Rc<BracketValue>),
@@ -375,8 +380,7 @@ pub struct Brackets {
     flags: Vec<BracketFlag>,
     is_processing: bool,
     is_valid: Option<bool>,
-    pub root: BracketValue,
-    pub config: Rc<HashMap<String, String>>
+    pub root: BkRoot
 }
 
 impl std::fmt::Display for Brackets {
@@ -402,10 +406,9 @@ impl Default for Brackets {
             all_open_bks: Default::default(),
             all_close_bks: Default::default(),
             flags: Default::default(),
-            root: BracketValue::Root(Default::default(), Default::default()),
+            root: Default::default(),
             is_processing: false,
-            is_valid: None,
-            config: Default::default(),
+            is_valid: None
         }
     }
 }
@@ -462,11 +465,11 @@ impl Brackets {
     }
 
     pub fn is_cache_off(&self) -> bool {
-        self.config.get(CONFIG_CACHE).unwrap_or(&String::new()) != CACHE_MODE_ON
+        self.root.config.get(CONFIG_CACHE).unwrap_or(&String::new()) != CACHE_MODE_ON
     }
 
     pub fn get_trim_mode(&self) -> &str {
-        if let Some(t) = self.config.get(CONFIG_TRIMMING) { return t }
+        if let Some(t) = self.root.config.get(CONFIG_TRIMMING) { return t }
         return TRIM_MODE_START
     }
 
@@ -588,10 +591,7 @@ impl Brackets {
 
     fn build_values(&mut self, root_start_index: usize, p: Option<Rc<RefCell<BracketValue>>>, s: Option<usize>) -> Result<(), BracketsError> {
         if p.is_none() {
-            let doc_value = match &self.root {
-                BracketValue::Root(_, d) => Rc::clone(&d.value),
-                _ => unreachable!()
-            };
+            let doc_value = Rc::clone(&self.root.doc.value);
             self.build_values(root_start_index, Some(doc_value), Some(root_start_index))?;
             return Ok(())
         }
@@ -669,10 +669,12 @@ impl Brackets {
     }
 
     fn init_root(&mut self) -> Result<(), BracketsError> {
-        let mut doc = BkDoc {
+        let mut root: BkRoot = Default::default();
+        root.doc = BkDoc {
             name: String::new(), 
             value: Rc::new(RefCell::new(BracketValue::Array(Default::default())))
         };
+        self.root = root;
         if self.flags.contains(&BracketFlag::HasConfig) {
             if self.open_bks[1].idx > self.close_bks[0].idx {
                 // empty config => remove flag
@@ -683,7 +685,7 @@ impl Brackets {
                 if map.len() == 0 {
                     return Err(BracketsError::new(INVALID_CONFIG));
                 }
-                self.config = Rc::new(map);
+                self.root.config = Rc::new(map);
                 self.flags.push(BracketFlag::HasValidConfig);
                 let firstb = self.open_bks.iter_mut().find(|o| o.idx > end_index);
                 if let Some(b) = firstb {
@@ -694,8 +696,7 @@ impl Brackets {
         else {
             self.open_bks[0].is_open_first = Some(true);
         }
-        doc.name = self.config.get(CONFIG_NAME).unwrap_or(&"doc".to_owned()).clone();
-        self.root = BracketValue::Root(Rc::clone(&self.config), doc);
+        self.root.doc.name = self.root.config.get(CONFIG_NAME).unwrap_or(&"doc".to_owned()).clone();
         Ok(())
     }
 
@@ -706,7 +707,7 @@ impl Brackets {
                 .iter()
                 .find(|b| b.warning_code == WARNING_MASK);
             if mask_found.is_none()
-                || self.config.get(CONFIG_CLOSURE_MODE) == Some(&CLOSURE_MODE_RAW.to_owned())
+                || self.root.config.get(CONFIG_CLOSURE_MODE) == Some(&CLOSURE_MODE_RAW.to_owned())
             {
                 // allow full parse
                 return Err(BracketsError::new(
@@ -1095,7 +1096,7 @@ mod tests_brackets {
         let file = File::open("/home/soul/dev/rust/calculator/src/data/db.bk");
         if let Ok(mut f) = file {
             let b = Brackets::build_from_file(f.borrow_mut()).unwrap();
-            assert!(b.config.len() > 0);
+            assert!(b.root.config.len() > 0);
         }
     }
 
