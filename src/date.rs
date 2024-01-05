@@ -178,10 +178,10 @@ impl DayDate {
         else if d == GUESS_DAY && m == GUESS_MONTH {
             if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { num = d; }
         }
-        else if GREATER_DAY_RANGE.contains(&d) {
+        else if d <= MAX_DAY {
             if let 1 | 3 | 5 | 7 | 8 | 10 | 12 = m { num = d; }
         }
-        else if d <= (GUESS_DAY + 1) {
+        else if d <= (MAX_DAY - 1) {
             if let 4 | 6 | 9 | 11 = m { num = d; }
         }
 
