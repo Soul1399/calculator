@@ -1,6 +1,23 @@
-use std::{error::Error, cmp::Ordering};
 
-#[derive(Clone, Copy, Debug, Eq)]
+use std::{error::Error, cmp::Ordering, ops::RangeInclusive};
+
+use lazy_static::lazy_static;
+
+const MAX_MONTH: u8 = 12;
+const MAX_MONTH32: i32 = MAX_MONTH as i32;
+const MAX_DAY: u8 = 31;
+const MAX_COMMON_DAY: u8 = 28;
+const GUESS_DAY: u8 = MAX_COMMON_DAY + 1;
+const GUESS_MONTH: u8 = 2;
+
+lazy_static! {
+    static ref MONTH_RANGE: RangeInclusive<u8> = 1..=MAX_MONTH;
+    static ref BASIC_DAY_RANGE: RangeInclusive<u8> = 1..=MAX_COMMON_DAY;
+    static ref GREATER_DAY_RANGE: RangeInclusive<u8> = 1..=MAX_DAY;
+    static ref DAY_MAP: Vec<u8> = vec![MAX_DAY, MAX_COMMON_DAY, MAX_DAY, MAX_DAY - 1, MAX_DAY, MAX_DAY - 1, MAX_DAY, MAX_DAY, MAX_DAY - 1, MAX_DAY, MAX_DAY - 1, MAX_DAY];
+}
+
+#[derive(Clone, Copy, Debug, Eq, Default)]
 pub struct DateKey {
     month: u8,
     year: i32
@@ -25,8 +42,8 @@ impl DateKey {
     }
 
     pub fn apply(&mut self, m: u8, y: i32) -> Result<(), DateError> {
-        if m < 1 || m > 12 {
-            return Err(DateError { details: String::from("Month has to be between 1 and 12") });
+        if !MONTH_RANGE.contains(&m) {
+            return Err(DateError { details: String::from(format!("Month has to be between 1 and {}", MONTH_RANGE.end())) });
         }
         self.month = m;
         self.year = y;
@@ -37,24 +54,24 @@ impl DateKey {
         if n == 0 {
             return;
         }
-        let mut new_m: i32 = 0;
+        let mut new_m: i32;
         if let 1..=11 = n.abs() {
             new_m = (self.month as i32) + n;
         }
-        else if n % 12 == 0 {
+        else if n % MAX_MONTH32 == 0 {
             new_m = self.month as i32;
-            self.year += n / 12;
+            self.year += n / MAX_MONTH32;
         }
         else {
-            self.year += f32::trunc((n / 12) as f32) as i32;
-            new_m = (self.month as i32) + n % 12;
+            self.year += f32::trunc((n / MAX_MONTH32) as f32) as i32;
+            new_m = (self.month as i32) + n % MAX_MONTH32;
         }
         if new_m < 1 {
-            new_m = 12 + new_m;
+            new_m = MAX_MONTH32 + new_m;
             self.year -= 1;
         }
-        else if new_m > 12 {
-            new_m = new_m - 12;
+        else if new_m > MAX_MONTH32 {
+            new_m = new_m - MAX_MONTH32;
             self.year += 1;
         }
         self.month = new_m as u8;
@@ -127,6 +144,55 @@ impl Ord for DateKey {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, Default)]
+pub struct DayDate {
+    num: u8,
+    date_key: DateKey
+}
+
+impl PartialEq for DayDate {
+    fn eq(&self, other: &Self) -> bool {
+        self.num == other.num
+        && self.date_key.partial_cmp(&other.date_key) == Some(Ordering::Equal)
+    }
+}
+
+impl DayDate {
+    pub fn build(d: u8, m: u8, y: i32) -> Result<Self, DateError> {
+        let mut date: DayDate = Default::default();
+        date.apply(d, m, y)?;
+        Ok(date)
+    }
+
+    pub fn apply(&mut self, d: u8, m: u8, y: i32) -> Result<(), DateError> {
+        let mut num: u8 = 0;
+        if let Err(e) = self.date_key.apply(m, y) {
+            return Err(e);
+        }
+        self.date_key.month = m;
+        self.date_key.year = y;
+        
+        if BASIC_DAY_RANGE.contains(&d) {
+            num = d;
+        }
+        else if d == GUESS_DAY && m == GUESS_MONTH {
+            if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { num = d; }
+        }
+        else if GREATER_DAY_RANGE.contains(&d) {
+            if let 1 | 3 | 5 | 7 | 8 | 10 | 12 = m { num = d; }
+        }
+        else if d <= (GUESS_DAY + 1) {
+            if let 4 | 6 | 9 | 11 = m { num = d; }
+        }
+
+        if num == 0 {
+            return Err(DateError { details: "Day of date should be between 1 and ...".to_owned() });
+        }
+
+        self.num = num;
+        Ok(())
+    }
+}
 
 #[cfg(test)]
 mod tests {

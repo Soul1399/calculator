@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate lazy_static;
+
 use std::{error::Error, rc::Rc, cell::RefCell};
 use calculator::{data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{SLC, FY}, Descriptive, build_entities};
 
