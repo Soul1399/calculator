@@ -165,34 +165,96 @@ impl DayDate {
     }
 
     pub fn apply(&mut self, d: u8, m: u8, y: i32) -> Result<(), DateError> {
-        let mut num: u8 = 0;
+        let num: u8;
         if let Err(e) = self.date_key.apply(m, y) {
             return Err(e);
         }
         self.date_key.month = m;
         self.date_key.year = y;
+        let max = max_day_of_month(m, y);
         
-        if BASIC_DAY_RANGE.contains(&d) {
+        if (1..=max).contains(&d) {
             num = d;
         }
-        else if d == GUESS_DAY && m == GUESS_MONTH {
-            if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { num = d; }
-        }
-        else if d <= MAX_DAY {
-            if let 1 | 3 | 5 | 7 | 8 | 10 | 12 = m { num = d; }
-        }
-        else if d <= (MAX_DAY - 1) {
-            if let 4 | 6 | 9 | 11 = m { num = d; }
-        }
-
-        if num == 0 {
-            return Err(DateError { details: "Day of date should be between 1 and ...".to_owned() });
+        else {
+            return Err(DateError { details: format!("Day of date should be between 1 and {}", max) });
         }
 
         self.num = num;
         Ok(())
     }
+
+    pub fn add_days(&mut self, n: i32) {
+        if n == 0 { return }
+        if n < 0 {
+            self.subtract_days(n);
+        }
+        else {
+            self.append_days(n);
+        }
+    }
+
+    fn subtract_days(&mut self, n: i32) {
+        assert!(n < 0);
+        if n + self.num as i32 > 0 {
+            self.num += n as u8;
+            return;
+        }
+
+        let mut num = n + self.num as i32;
+        let mut new_key = self.date_key.clone();
+        new_key.add_months(-1);
+        let mut max = max_day_of_month(new_key.month, new_key.year);
+        while num < 0 {
+            num += max as i32;
+            new_key.add_months(-1);
+            max = max_day_of_month(new_key.month, new_key.year);
+        }
+        self.date_key = new_key;
+        
+    }
+
+    fn append_days(&mut self, n: i32) {
+        assert!(n > 0);
+        let mut max = max_day_of_month(self.date_key.month, self.date_key.year);
+        if n + self.num as i32 <= max as i32 {
+            self.num += n as u8;
+            return;
+        }
+        
+        let rest = max - self.num;
+        let mut num = n - rest as i32;
+        let mut new_key = self.date_key.clone();
+        
+        new_key.add_months(1);
+        max = max_day_of_month(new_key.month, new_key.year);
+        while num > max as i32 {
+            num -= max as i32;
+            new_key.add_months(1);
+            max = max_day_of_month(new_key.month, new_key.year);
+        }
+
+        self.date_key = new_key;
+        self.num = num as u8;
+    }
 }
+
+pub fn is_leap_year(y: i32) -> bool {
+    y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)
+}
+
+pub fn max_day_of_xmonth(index_m: usize, y:i32) -> u8 {
+    if index_m as u8 + 1 == GUESS_MONTH && is_leap_year(y) {
+        return DAY_MAP[index_m] + 1
+    }
+    DAY_MAP[index_m]
+}
+
+pub fn max_day_of_month(m: u8, y:i32) -> u8 {
+    assert!(MONTH_RANGE.contains(&m));
+    max_day_of_xmonth(m as usize - 1, y)
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -227,4 +289,26 @@ mod tests {
         assert_eq!(d.month, 11);
         assert_eq!(d.year, 2001);
     }
+
+    #[test]
+    fn add_days() {
+        let mut r = DayDate::build(1, 1, 2000);
+        if let Ok(mut d) = r {
+            d.add_days(30);
+            assert_eq!(d.num, 31);
+            assert_eq!(d.date_key.month, 1);
+            assert_eq!(d.date_key.year, 2000);
+            
+            d.add_days(1);
+            assert_eq!(d.num, 1);
+            assert_eq!(d.date_key.month, 2);
+            assert_eq!(d.date_key.year, 2000);
+
+            d.add_days(-1);
+            assert_eq!(d.num, 31);
+            assert_eq!(d.date_key.month, 1);
+            assert_eq!(d.date_key.year, 2000);
+        }
+    }
+
 }
