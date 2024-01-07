@@ -1,7 +1,6 @@
 /* sample text in data/db.bk */
-
 use std::{cmp::Ordering, collections::HashMap, fs::File, io::Read, ops::RangeInclusive, rc::Rc, cell::RefCell};
-use crate::tools::bracket::bk_error::{WARNING_ESCAPED, WARNING_FREE_TEXT};
+use crate::{tools::bracket::bk_error::{WARNING_ESCAPED, WARNING_FREE_TEXT}, date::DayDate};
 use self::bk_error::{
     BracketsError, BASE_FORMAT_ERROR, EMPTY_STRING, FORMAT_ERROR, INVALID_CONFIG,
     WARNING_EMPTY_FREE_TEXT, WARNING_MASK,
@@ -11,18 +10,20 @@ pub const OPEN: char = '[';
 pub const CLOSE: char = ']';
 const ESCAPE_CHAR: char = '\\';
 const COMMA_CHAR: char = ',';
+
 const TOKEN_PIPE: &str = "[|";
 const TOKEN_PIPE_END: &str = "|]";
 const TOKEN_COLON: &str = "[:";
 const TOKEN_COLON_END: &str = ":]";
 const TOKEN_COMMA: &str = "[,";
 const TOKEN_COMMA_END: &str = ":]";
-const RE_OPEN_CONFIG: &str = r"^\s*(@\[)";
-const RE_OPEN_START: &str = r"^\s*\[";
-const RE_END: &str = r"]\s*$";
 const TOKEN_INT: &str = "[@int:";
 const TOKEN_DATE: &str = "[@date:";
 const TOKEN_REAL: &str = "[@real:";
+
+const RE_OPEN_CONFIG: &str = r"^\s*(@\[)";
+const RE_OPEN_START: &str = r"^\s*\[";
+const RE_END: &str = r"]\s*$";
 const RE_OPEN: &str = r"(\[(?:\|+|:+|,|@int:|@date:|@real:)|\[)";
 const RE_CLOSE: &str = r"((?:\|+|:+|,)]|])";
 
@@ -117,6 +118,18 @@ impl BracketId {
         }
         let text = self.extract_string_from(buffer, trim_mode);
         Some(text.split(COMMA_CHAR).into_iter().map(|s| s.trim().to_owned()).collect())
+    }
+
+    pub fn extract_date_from(&self, buffer: &str, trim_mode: &str) -> Option<DayDate> {
+        match self.btyp {
+            BracketType::Date => {},
+            _ => { return None }
+        }
+        let text = self.extract_string_from(buffer, trim_mode);
+        match DayDate::parse(text) {
+            Err(_) => None,
+            Ok(d) => Some(d)
+        }
     }
 }
 

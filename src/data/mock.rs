@@ -17,7 +17,7 @@ pub fn fake_years<'y>() -> Vec<FiscalYear> {
     let mut years: Vec<FiscalYear> = vec![];
     
     let mut rg = START..=DELAY;
-    let y: Vec<DateKey> = rg.into_iter().map(|x| DateKey::build(x, year)).collect();
+    let y: Vec<DateKey> = rg.into_iter().map(|x| DateKey::new(x, year)).collect();
     years.push(FiscalYear::build(Rc::new(y)));
     let delay: i8 = DELAY as i8 - 12;
     for _ in 0..2 {
@@ -30,7 +30,7 @@ pub fn fake_years<'y>() -> Vec<FiscalYear> {
             else if m == 1 {
                 year += 1;
             }
-            DateKey::build( m as u8, year)
+            DateKey::new( m as u8, year)
         }).collect();
         years.push(FiscalYear::build(Rc::new(y)));
     }

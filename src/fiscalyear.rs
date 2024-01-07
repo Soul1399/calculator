@@ -147,23 +147,23 @@ mod tests {
 
     #[test]
     fn slices_1() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let fy = FiscalYear::build(Rc::new(months));
         let slice = fy.get_slice(1).unwrap();
-        assert_eq!(vec![DateKey::build(1, 2023), DateKey::build(2, 2023), DateKey::build(3, 2023)], slice)
+        assert_eq!(vec![DateKey::new(1, 2023), DateKey::new(2, 2023), DateKey::new(3, 2023)], slice)
     }
 
     #[test]
     fn slices_3() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let fy = FiscalYear::build(Rc::new(months));
         let slice = fy.get_slice(3).unwrap();
-        assert_eq!(vec![DateKey::build(7, 2023), DateKey::build(8, 2023), DateKey::build(9, 2023)], slice)
+        assert_eq!(vec![DateKey::new(7, 2023), DateKey::new(8, 2023), DateKey::new(9, 2023)], slice)
     }
 
     #[test]
     fn slice_invalid() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let fy = FiscalYear::build(Rc::new(months));
         let slice = fy.get_slice(45);
         assert_eq!(Err("Invalid position"), slice)
@@ -179,34 +179,34 @@ mod tests {
 
     #[test]
     fn count_months() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let fy = FiscalYear::build(Rc::new(months));
         assert_eq!(fy.months.len(), 12);
-        let months: Vec<DateKey> = (6..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (6..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let fy = FiscalYear::build(Rc::new(months));
         assert_eq!(fy.months.len(), 7);
     }
 
     #[test]
     fn fy_min() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let fy = FiscalYear::build(Rc::new(months));
-        assert_eq!(DateKey::build(1, 2023), *fy.min().unwrap())
+        assert_eq!(DateKey::new(1, 2023), *fy.min().unwrap())
     }
 
     #[test]
     fn fy_max() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let fy = FiscalYear::build(Rc::new(months));
-        assert_eq!(DateKey::build(12, 2023), *fy.max().unwrap())
+        assert_eq!(DateKey::new(12, 2023), *fy.max().unwrap())
     }
 
     #[test]
     #[should_panic(expected="Date was not found in any fiscal years")]
     fn find_none_before() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let fy = FiscalYear::build(Rc::new(months));
-        if let Err(Err(e)) = FiscalYear::find(&vec![fy], &DateKey::build(1, 2000)) {
+        if let Err(Err(e)) = FiscalYear::find(&vec![fy], &DateKey::new(1, 2000)) {
             panic!("{}", e);
         }
     }
@@ -214,19 +214,19 @@ mod tests {
     #[test]
     #[should_panic(expected="Date was not found in any fiscal years")]
     fn find_none_after() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let fy = FiscalYear::build(Rc::new(months));
-        if let Err(Err(e)) = FiscalYear::find(&vec![fy], &DateKey::build(1, 2030)) {
+        if let Err(Err(e)) = FiscalYear::find(&vec![fy], &DateKey::new(1, 2030)) {
             panic!("{}", e);
         }
     }
 
     #[test]
     fn find_fy() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let fy = FiscalYear::build(Rc::new(months));
         let list = vec![fy];
-        let r = FiscalYear::find(&list, &DateKey::build(4, 2023));
+        let r = FiscalYear::find(&list, &DateKey::new(4, 2023));
         let f = r.unwrap();
         assert_eq!(f.min(), list[0].min());
         assert_eq!(f.max(), list[0].max());
@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn build_keys() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let fy = FiscalYear::build(Rc::new(months));
         let keys = FiscalYear::get_keys(&vec![fy]);
         assert!(keys.len() == 13);
@@ -244,13 +244,13 @@ mod tests {
 
     #[test]
     fn build_keys_multiple() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let fy = FiscalYear::build(Rc::new(months));
         let mut list = vec![fy];
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2022)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2022)).collect();
         let fy = FiscalYear::build(Rc::new(months));
         list.push(fy);
-        let months: Vec<DateKey> = (7..=12).into_iter().map(|m| DateKey::build(m, 2021)).collect();
+        let months: Vec<DateKey> = (7..=12).into_iter().map(|m| DateKey::new(m, 2021)).collect();
         let fy = FiscalYear::build(Rc::new(months));
         list.push(fy);
         let keys = FiscalYear::get_keys(&list);
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     #[should_panic(expected="Too big slice size (30)")]
     fn build_slice() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let mut fy = FiscalYear::build(Rc::new(months));
         fy.build_slices(30);
 
@@ -271,26 +271,26 @@ mod tests {
     #[test]
     #[should_panic(expected="Unable to create slice of size 0")]
     fn build_0_slice() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let mut fy = FiscalYear::build(Rc::new(months));
         fy.build_slices(0);
     }
 
     #[test]
     fn build_n_slices() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let mut fy = FiscalYear::build(Rc::new(months));
         fy.build_slices(3);
         assert_eq!(4, fy.slices.len());
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let mut fy = FiscalYear::build(Rc::new(months));
         fy.build_slices(4);
         assert_eq!(3, fy.slices.len());
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let mut fy = FiscalYear::build(Rc::new(months));
         fy.build_slices(5);
         assert_eq!(3, fy.slices.len());
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let mut fy = FiscalYear::build(Rc::new(months));
         fy.build_slices(2);
         assert_eq!(6, fy.slices.len());
@@ -298,10 +298,10 @@ mod tests {
 
     #[test]
     fn find_no_slice() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let mut fy = FiscalYear::build(Rc::new(months));
         fy.build_slices(3);
-        let r = fy.find_slice(&DateKey::build(1, 2020));
+        let r = fy.find_slice(&DateKey::new(1, 2020));
         if let Err(e) = r {
             assert_eq!("Slice not found", e);
         }
@@ -310,10 +310,10 @@ mod tests {
 
     #[test]
     fn find_one_slice() {
-        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::build(m, 2023)).collect();
+        let months: Vec<DateKey> = (1..=12).into_iter().map(|m| DateKey::new(m, 2023)).collect();
         let mut fy = FiscalYear::build(Rc::new(months));
         fy.build_slices(3);
-        let r = fy.find_slice(&DateKey::build(3, 2023)).unwrap();
+        let r = fy.find_slice(&DateKey::new(3, 2023)).unwrap();
         assert_eq!(r.len(), 3);
         assert!(r.iter().any(|d| d.month() == 3 && d.year() == 2023));
         assert!(r.iter().any(|d| d.month() == 2 && d.year() == 2023));

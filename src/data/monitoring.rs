@@ -498,9 +498,9 @@ mod tests {
     }
 
     fn init_ltm_data<'a>() -> (DateKey, Vec<DateKey>, ComputerMode) {
-        let date = DateKey::build(1, 2023);
-        let mut slice: Vec<DateKey> = (1..7).into_iter().map(|x| DateKey::build(x, 2023)).collect();
-        slice.extend((7..13).into_iter().map(|x| DateKey::build(x, 2022)));
+        let date = DateKey::new(1, 2023);
+        let mut slice: Vec<DateKey> = (1..7).into_iter().map(|x| DateKey::new(x, 2023)).collect();
+        slice.extend((7..13).into_iter().map(|x| DateKey::new(x, 2022)));
         let mode = ComputerMode::AddUp;
         (date, slice, mode)
     }
@@ -517,7 +517,7 @@ mod tests {
                 input: RefCell::new(UserInput { author: String::new(), computed: None, inputed: value }), 
                 ltm: RefCell::new(None), 
                 context: 1, 
-                key: Rc::new(ComputeKey { date: DateKey::build(m, y), span: Some(&SLC) })
+                key: Rc::new(ComputeKey { date: DateKey::new(m, y), span: Some(&SLC) })
             }
         }).collect()
     }

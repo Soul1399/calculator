@@ -19,7 +19,7 @@ fn build_inputs(data: Vec<IndicatorInputData>) -> Vec<IndicatorInput> {
 }
 
 fn build_input(input: &IndicatorInputData) -> IndicatorInput {
-    let dt = DateKey::build(input.month, input.year);
+    let dt = DateKey::new(input.month, input.year);
     IndicatorInput {
         context: input.context,
         code: input.code,
