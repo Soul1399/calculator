@@ -47,7 +47,8 @@ pub struct BracketId {
     pub start: usize,
     pub end: usize,
     pub id_value: Option<String>,
-    pub btyp: BracketType
+    pub btyp: BracketType,
+    pub is_empty: bool
 }
 
 impl BracketId {
@@ -139,10 +140,19 @@ pub struct BkRoot {
     pub doc: BkDoc
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BkDoc {
     pub name: String,
     pub value: Rc<RefCell<BracketValue>>
+}
+
+impl Default for BkDoc {
+    fn default() -> Self {
+        BkDoc {
+            name: String::new(), 
+            value: Rc::new(RefCell::new(BracketValue::Array(Default::default())))
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -218,24 +228,22 @@ impl BracketValue {
         };
     }
 
-    pub fn set_noval(&mut self, is_doc: bool) {
+    pub fn set_noval(&mut self) {
         match self {
             BracketValue::Prop(_, v) => {
                 *v = Default::default();
             },
             BracketValue::Array(vc) => {
-                if !is_doc { vc.borrow_mut().value.clear() }
+                vc.borrow_mut().value.clear();
             }
             _ => {}
         }
-
-        if is_doc { *self = Default::default() }
     }
 
-    pub fn init_obj(&self, id_val: BracketId) -> Rc<BracketValue> {
+    pub fn init_obj(&self, id_val: Rc<RefCell<BracketId>>) -> Rc<BracketValue> {
         let obj = BracketValue::Obj(
-            Rc::new(RefCell::new(id_val)),
-            Rc::new(RefCell::new(BracketValue::Array(Rc::new(RefCell::new(BkArray { value: Default::default() })))))
+            id_val,
+            Rc::new(RefCell::new(BracketValue::Array(Default::default())))
         );
         let obj_rc = Rc::new(obj);
         let rc = Rc::clone(&obj_rc);
@@ -253,6 +261,57 @@ impl BracketValue {
 
         rc
     }
+
+    pub fn add_child(&mut self, value: BracketValue) {
+        match self {
+            BracketValue::Array(a) => {
+                a.borrow_mut().value.push(Rc::new(value))
+            }
+            BracketValue::Obj(_, vc) => {
+                if let BracketValue::Array(ref a) = *vc.borrow() {
+                    a.borrow_mut().value.push(Rc::new(value))
+                }
+            },
+            BracketValue::Prop(_, val) => {
+                *val = Rc::new(value);
+            },
+            _ => {}
+        }
+    }
+
+    fn adapt(&mut self, value_result: BuildValueResult) {
+        let mut new_value: Option<BracketValue> = None;
+        if let BuildValueResult::NoVal = value_result {
+            new_value = Some(Default::default())
+        }
+        else {
+            match self {
+                BracketValue::Array(ref mut a) => {
+                    match value_result {
+                        BuildValueResult::Single => {
+                            let obj = Rc::clone(&a.borrow().value.iter().next().unwrap());
+                            new_value = Some(obj.as_ref().clone());
+                        },
+                        _ => {}
+                    }
+                },
+                _ => unreachable!()
+            }
+        }
+        if new_value.is_none() {return;}
+        *self = new_value.unwrap();
+    }
+}
+
+#[repr(isize)]
+#[derive(Debug, Clone, Default)]
+enum BuildValueResult {
+    Tuple = 1,
+    Single  = 2,
+    #[default]
+    Multiple = 3,
+    NoVal = 4,
+    DoubleSingle = 5
 }
 
 #[repr(u8)]
@@ -393,6 +452,7 @@ pub struct Brackets {
     flags: Vec<BracketFlag>,
     is_processing: bool,
     is_valid: Option<bool>,
+    start_index: Option<usize>,
     pub root: BkRoot
 }
 
@@ -421,7 +481,8 @@ impl Default for Brackets {
             flags: Default::default(),
             root: Default::default(),
             is_processing: false,
-            is_valid: None
+            is_valid: None,
+            start_index: None
         }
     }
 }
@@ -511,6 +572,7 @@ impl Brackets {
     }
 
     pub fn get_start_index(&self) -> usize {
+        if self.start_index.is_some() { return self.start_index.unwrap() }
         let mut start_index: usize = 0;
         let mut enm = self.open_bks.iter().peekable();
         while let Some(bk) = enm.peek() {
@@ -532,8 +594,8 @@ impl Brackets {
             self.is_processing = false;
             return Err(e)
         }
-        let root_index = self.get_start_index();
-        self.build_values(root_index, None, None)?;
+        self.start_index = Some(self.get_start_index());
+        self.build_values(None, None)?;
         self.is_processing = false;
         Ok(())
     }
@@ -602,11 +664,12 @@ impl Brackets {
         Ok(())
     }
 
-    fn build_values(&mut self, root_start_index: usize, p: Option<Rc<RefCell<BracketValue>>>, s: Option<usize>) -> Result<(), BracketsError> {
+    fn build_values(&mut self, p: Option<Rc<RefCell<BracketValue>>>, s: Option<usize>) -> Result<BuildValueResult, BracketsError> {
         if p.is_none() {
+            let root_start_index = self.get_start_index();
             let doc_value = Rc::clone(&self.root.doc.value);
-            self.build_values(root_start_index, Some(doc_value), Some(root_start_index))?;
-            return Ok(())
+            let result = self.build_values(Some(doc_value), Some(root_start_index))?;
+            return Ok(result);
         }
 
         let parent = p.unwrap();
@@ -614,25 +677,26 @@ impl Brackets {
         let open_parent = &self.open_bks[*self.open_bks_hash.get(&p_start).unwrap()];
         let found = self.open_bks.iter().any(|o| open_parent.idx < o.idx && o.idx < open_parent.linked_idx);
         let start = open_parent.get_inside_value_index();
-        
+        let result: BuildValueResult;
         if !found {
             let close_parent = &self.close_bks[*self.close_bks_hash.get(&open_parent.linked_idx).unwrap()];
             let end = close_parent.get_inside_value_index();
-            self.build_single_value(p_start, &parent, start, end, p_start == root_start_index);
+            result = self.build_single_value(p_start, parent.clone(), start, end);
         }
         else {
-            self.build_child_values(open_parent.idx, open_parent.linked_idx, start, parent, root_start_index)?;
+            result = self.build_child_values(open_parent.idx+1..open_parent.linked_idx, start, parent.clone())?;
         }
-        Ok(())
+        parent.borrow_mut().adapt(result.clone());
+        Ok(result)
     }
 
-    fn build_child_values(&mut self, open_parent_idx: usize, close_parent_idx: usize, start: usize, parent: Rc<RefCell<BracketValue>>, root_start_index: usize) -> Result<(), BracketsError> {
+    fn build_child_values(&mut self, parent_range: std::ops::Range<usize>, start: usize, parent: Rc<RefCell<BracketValue>>) -> Result<BuildValueResult, BracketsError> {
         let mut children_it = self.open_bks.iter()
-            .filter(|o| open_parent_idx < o.idx && o.idx < close_parent_idx)
+            .filter(|o| parent_range.contains(&o.idx))
             .peekable();
         let mut bypass_ranges: Vec<RangeInclusive<usize>> = Vec::new();
         let mut all_ids_empty = true;
-        let mut child_map: Vec<(usize, Rc<RefCell<BracketValue>>)> = Vec::new();
+        let mut child_map: Vec<(usize, Rc<RefCell<BracketId>>, Rc<RefCell<BracketValue>>)> = Vec::new();
         let trim_mode = self.get_trim_mode();
         while children_it.peek().is_some() {
             let child = children_it.next().unwrap();
@@ -650,44 +714,70 @@ impl Brackets {
             let mut id_val = BracketId::new_id(key_start, key_end, Default::default());
             if id_val.get_length(&self.buffer, trim_mode) > 0 {
                 all_ids_empty = false;
+                if !self.is_cache_off() {
+                    id_val.id_value = Some(id_val.extract_string_from(&self.buffer, trim_mode).to_owned());
+                }
             }
-            else if !self.is_cache_off() {
-                id_val.id_value = Some(id_val.extract_string_from(&self.buffer, trim_mode).to_owned());
+            else {
+                id_val.is_empty = true;
             }
-            let val = parent.borrow_mut().init_obj(id_val);
-            let obj = match val.as_ref() {
-                BracketValue::Obj(_, a) => Rc::clone(a),
-                _ => unreachable!()
-            };
-            child_map.push((child.idx, obj));
+            let array = BracketValue::Array(Default::default());
+            child_map.push((child.idx, Rc::new(RefCell::new(id_val)), Rc::new(RefCell::new(array))));
         }
-        Ok(for (s, o) in child_map {
-            self.build_values(root_start_index, Some(o), Some(s))?;
-        })
+
+        let len = child_map.len();
+        let mut last_result: BuildValueResult = BuildValueResult::NoVal;
+        for (s, id, o) in child_map {
+            last_result = self.build_values(Some(o.clone()), Some(s))?;
+            match *o.clone().borrow() {
+                BracketValue::Array(ref a) => {
+                    match last_result {
+                        BuildValueResult::Single => {
+                            parent.borrow_mut().add_child(BracketValue::Prop(id, a.borrow().value.iter().next().unwrap().clone()))
+                        },
+                        BuildValueResult::NoVal => {
+                            parent.borrow_mut().add_child(BracketValue::Prop(id, Default::default()))
+                        }
+                        _ => {
+                            parent.borrow_mut().add_child(BracketValue::Obj(id, o))
+                        }
+                    }
+                }
+                _  => unreachable!()
+            }
+        }
+
+        if len == 1 {
+            return Ok(if all_ids_empty {
+                BuildValueResult::NoVal
+            }
+            else {
+                if let BuildValueResult::Single | BuildValueResult::NoVal = last_result { BuildValueResult::DoubleSingle } 
+                else { BuildValueResult::Single }
+            });
+        }
+
+        Ok(if all_ids_empty { BuildValueResult::Tuple } else { BuildValueResult::Multiple })
     }
 
-    fn build_single_value(&mut self, p_start : usize, parent: &Rc<RefCell<BracketValue>>, start: usize, end: usize, is_parent_doc: bool) {
+    fn build_single_value(&mut self, p_start : usize, parent: Rc<RefCell<BracketValue>>, start: usize, end: usize) -> BuildValueResult {
         let trim_mode = self.get_trim_mode();
-        let typ = self.define_single_value_type(Rc::clone(parent), p_start);
+        let typ = self.define_single_value_type(Rc::clone(&parent), p_start);
         let mut id_val = BracketId::new_id(start, end, typ);
         if !self.is_cache_off() {
             id_val.id_value = Some(id_val.extract_string_from(&self.buffer, trim_mode).to_owned());
         }
         if id_val.get_length(&self.buffer, trim_mode) == 0 {
-            parent.borrow_mut().set_noval(is_parent_doc);
+            parent.borrow_mut().set_noval();
+            return BuildValueResult::NoVal;
         }
-        else {
-            parent.borrow_mut().set_single_value(&id_val);
-        }
+        
+        parent.borrow_mut().set_single_value(&id_val);
+        BuildValueResult::Single
     }
 
     fn init_root(&mut self) -> Result<(), BracketsError> {
-        let mut root: BkRoot = Default::default();
-        root.doc = BkDoc {
-            name: String::new(), 
-            value: Rc::new(RefCell::new(BracketValue::Array(Default::default())))
-        };
-        self.root = root;
+        self.root = Default::default();
         if self.flags.contains(&BracketFlag::HasConfig) {
             if self.open_bks[1].idx > self.close_bks[0].idx {
                 // empty config => remove flag
