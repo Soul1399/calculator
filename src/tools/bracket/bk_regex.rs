@@ -2,7 +2,11 @@ use std::collections::HashMap;
 
 use regex::Regex;
 
-use super::{RE_OPEN_START, RE_OPEN_CONFIG, RE_END, TOKEN_INT, BracketType, TOKEN_DATE, TOKEN_REAL, OPEN, TOKEN_PIPE, TOKEN_COLON, TOKEN_COMMA, TOKEN_COLON_END, TOKEN_PIPE_END, BracketChunk, CharSlice, ESCAPE_CHAR, CLOSE, CONFIG_NAME, CONFIG_VERSION, CONFIG_ALLOW_EMPTY_FT, CONFIG_CLOSURE_MODE, CONFIG_TRIMMING, RE_OPEN, CONFIG_CACHE, TOKEN_COMMA_END};
+use super::{RE_OPEN_START, RE_OPEN_CONFIG, RE_END, TOKEN_INT, 
+    BracketType, TOKEN_DATE, TOKEN_REAL, OPEN, TOKEN_PIPE, TOKEN_COLON, 
+    TOKEN_COMMA, TOKEN_COLON_END, TOKEN_PIPE_END, BracketChunk, 
+    CharSlice, ESCAPE_CHAR, CLOSE, CONFIG_NAME, CONFIG_VERSION, 
+    CONFIG_ALLOW_EMPTY_FREE_TEXT, CONFIG_CLOSURE_MODE, CONFIG_TRIMMING, RE_OPEN, CONFIG_CACHE, TOKEN_COMMA_END};
 
 pub fn match_simple_start(s: &str) -> bool {
     let re_start = Regex::new(RE_OPEN_START).unwrap();
@@ -93,7 +97,7 @@ pub fn guess_close_type(m: &regex::Match<'_>) -> BracketType {
 }
 
 pub fn extract_config(s: &str) -> (usize, HashMap<String, String>) {
-    let props = vec![CONFIG_NAME, CONFIG_VERSION, CONFIG_ALLOW_EMPTY_FT, CONFIG_CLOSURE_MODE, CONFIG_CACHE, CONFIG_TRIMMING];
+    let props = vec![CONFIG_NAME.as_str(), CONFIG_VERSION.as_str(), CONFIG_ALLOW_EMPTY_FREE_TEXT.as_str(), CONFIG_CLOSURE_MODE.as_str(), CONFIG_CACHE.as_str(), CONFIG_TRIMMING.as_str()];
     let patterns: Vec<String> = props
         .iter()
         .map(|s| format!(r"({0}\[(?<{1}>[\w\s]*)\])?", s, s.replace(" ", "_")))

@@ -1,14 +1,18 @@
 #[macro_use]
 extern crate lazy_static;
 
-use std::{error::Error, rc::Rc, cell::RefCell};
-use calculator::{data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{SLC, FY}, Descriptive, build_entities};
+use std::{cell::RefCell, default, error::Error, rc::Rc};
+use calculator::{build_entities, data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{FY, SLC}, Descriptive};
+use calculator::tools::bracket::CONFIG_NAME;
 
+const TEST: &str = "t";
 
 fn main() -> Result<(), Box<dyn Error>> {
     build_entities!(json "path");
     let x = 1;
     build_entities!(valueof x);
+
+    build_entities!(valueof CONFIG_NAME);
 
     let v = build_entities!(listof SLC, FY);
     println!("{}", v.join(","));
