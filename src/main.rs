@@ -2,22 +2,26 @@
 extern crate lazy_static;
 
 use std::{cell::RefCell, default, error::Error, rc::Rc};
-use calculator::{build_entities, data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{FY, SLC}, Descriptive};
-use calculator::tools::bracket::CONFIG_NAME;
-
-const TEST: &str = "t";
+use calculator::{build_entities, data::{self, inputs::InputContext, monitoring::InputMonitoring}, indic::{FY, SLC}, tools::dir::{get_file_names, get_os_file_names}, Descriptive};
+//use calculator::tools::bracket::CONFIG_NAME;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    build_entities!(json "path");
-    let x = 1;
-    build_entities!(valueof x);
+    //build_entities!(json "path");
+    //let x = 1;
+    //build_entities!(valueof x);
 
-    build_entities!(valueof CONFIG_NAME);
+    //build_entities!(valueof CONFIG_NAME);
 
-    let v = build_entities!(listof SLC, FY);
-    println!("{}", v.join(","));
+    //let v = build_entities!(listof SLC, FY);
+    //println!("{}", v.join(","));
 
     //start_compute()
+
+    let paths = get_os_file_names("/home/soul/Documents/mags")?;
+    for p in paths {
+        println!("{}", p.to_str().unwrap());
+    }
+
     Ok(())
 }
 

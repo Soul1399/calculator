@@ -37,3 +37,4 @@ impl<T: Deref<Target=[u8]>> TrimAsciiWhitespace for T {
 }
 
 pub mod bracket;
+pub mod dir;

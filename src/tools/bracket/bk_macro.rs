@@ -2,19 +2,16 @@
 #[macro_export]
 macro_rules! bk_config {
     ($($ident:ident),* ) => {
-        $(
-            paste::paste! {
-                const [<"BKCONF" _ $ident:upper>]: &str = stringify!($ident);
-            }
-        )*
-
-        paste::paste! {
-            lazy_static::lazy_static! {
+        lazy_static::lazy_static! {
+            static ref ConfigProps: Vec<String> = {
+                let mut v: Vec<String> = Default::default();
                 $(
-                    static ref [<"CONFIG" _ $ident:upper>]: String = str::replace(stringify!($ident), "_", " ");
+                    v.push(String::from(stringify!($ident)));
                 )*
-            }
+                v
+            };
         }
+        
 
         #[derive(Debug, Clone)]
         pub struct BracketConfig {
@@ -31,6 +28,26 @@ macro_rules! bk_config {
                     )*
                 }
             }
+        }
+
+        impl BracketConfig {
+            pub fn set_config(&mut self, key: &str, value: &str) {
+                $(
+                    if key == stringify!($ident) {
+                        paste::paste! {
+                        self.[<set _ $ident>](value);
+                        }
+                    }
+                )*
+            }
+
+            $(
+                paste::paste! {
+                    fn [<set _ $ident>](&mut self, value: &str) {
+                        self.$ident = value.to_owned();
+                    }
+                }
+            )*
         }
     };
 }

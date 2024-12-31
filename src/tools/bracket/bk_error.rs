@@ -8,11 +8,14 @@ pub const EMPTY_STRING: &str = "Empty string";
 pub const BASE_FORMAT_ERROR: &str = "Start and/or end of the text is malformed";
 pub const FORMAT_ERROR: &str = "Input string is malformed";
 pub const BAD_ENDING: &str = "No opening bracket found for ";
+pub const BAD_START_COMMENT: &str = "Missing start of comment";
+pub const BAD_ENDING_COMMENT: &str = "Missing end of comment";
 
 pub const WARNING_EMPTY_FREE_TEXT: usize = 1;
 pub const WARNING_ESCAPED: usize = 2;
 pub const WARNING_FREE_TEXT: usize = 3;
 pub const WARNING_MASK: usize = 4;
+pub const WARNING_FREE_NAME: usize = 5;
 
 #[derive(Debug)]
 pub struct BracketsError {

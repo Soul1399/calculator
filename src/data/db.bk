@@ -37,9 +37,9 @@
             [
                 code[1]
                 label[:|main block|:]
-                description[|absolute| block 10]
+                description[ |absolute| block 10]
             ]
         ]
-        [:[dbo].[other]:][test \[\]]
+        [@[dbo].[other]@][test \[\]]
     ]
 ]
