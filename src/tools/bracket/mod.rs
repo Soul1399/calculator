@@ -1,7 +1,8 @@
 /* sample text in data/db.bk */
-use std::{cell::RefCell, cmp::Ordering, collections::HashMap, fs::File, io::Read, ops::RangeInclusive, rc::Rc, sync::{Arc, Mutex}};
+use std::{cell::RefCell, cmp::Ordering, collections::HashMap, fs::File, io::Read, ops::RangeInclusive, path::Path, rc::Rc};
 use bk_error::{BAD_ENDING_COMMENT, BAD_START_COMMENT};
 use lazy_static::lazy_static;
+use memmap2::{Mmap, MmapOptions};
 use uuid::Uuid;
 
 use crate::{bk_config, date::DayDate, tools::bracket::bk_error::{WARNING_ESCAPED, WARNING_FREE_TEXT}};
@@ -122,16 +123,16 @@ impl BracketValue {
         v
     }
 
-    pub fn get_length(&self, buffer: Arc<String>, trim_mode: &str) -> usize {
+    pub fn get_length(&self, source_buffer: &str, trim_mode: &str) -> usize {
         let l = self.value.borrow().len();
         if l > 0 {
             return l;
         }
-        self.extract_string_from(&buffer, trim_mode).len()
+        self.extract_string_from(&source_buffer, trim_mode).len()
     }
 
-    pub fn extract_string_from<'a>(&self, buffer: &'a str, trim_mode: &str) -> &'a str {
-        let slice: &'a str = &buffer[self.start..=self.end];
+    pub fn extract_string_from<'a>(&self, source_buffer: &'a str, trim_mode: &str) -> &'a str {
+        let slice: &'a str = &source_buffer[self.start..=self.end];
         if trim_mode == TRIM_MODE_OFF {
             return slice
         }
@@ -480,9 +481,11 @@ impl BracketChunk {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Brackets {
-    buffer: Arc<String>,
+    buffer: String,
+    buffer_map: Option<Mmap>,
+    file_map: Option<Rc<File>>,
     all_open_bks: Vec<BracketChunk>,
     all_close_bks: Vec<BracketChunk>,
     open_bks: Vec<BracketChunk>,
@@ -514,6 +517,8 @@ impl Default for Brackets {
     fn default() -> Self {
         Brackets {
             buffer: Default::default(),
+            buffer_map: None,
+            file_map: None,
             open_bks: Default::default(),
             open_bks_hash: HashMap::new(),
             close_bks: Default::default(),
@@ -531,15 +536,24 @@ impl Default for Brackets {
     }
 }
 
+impl Drop for Brackets {
+    fn drop(&mut self) {
+        if self.file_map.is_some() {
+            self.buffer_map = None;
+            self.file_map = None;
+        }
+    }
+}
+
 impl Brackets {
     pub fn build_from_string(text: String) -> Result<Brackets, BracketsError> {
         let mut new = Brackets::default();
-        new.buffer = Arc::new(text);
+        new.buffer = text;
         new.process_buffer()?;
         Ok(new)
     }
 
-    pub fn build_from_file(file: &mut File, file_name: &str) -> Result<Brackets, BracketsError> {
+    pub fn build_from_file_string(file: &mut File, file_name: &str) -> Result<Brackets, BracketsError> {
         let mut buf: String = Default::default();
         let result = file.read_to_string(&mut buf);
         if let Ok(_) = result {
@@ -549,6 +563,26 @@ impl Brackets {
         }
 
         Err(BracketsError::new(format!("Could not read file: {}", result.err().unwrap()).as_str()))
+    }
+
+    pub fn build_from_file_map(filename: &str) -> Result<Brackets, BracketsError> {
+        let result = File::open(filename);
+        let file: File;
+        if let Err(e) = result {
+            return Err(BracketsError::new(&format!("Cannot open file {} {}", filename, e)))
+        }
+        file = result.unwrap();
+        let m = unsafe { MmapOptions::new().map(&file) };
+        if let Err(e) = m {
+            return Err(BracketsError::new(&format!("OS error {} occured", e.raw_os_error().unwrap())));
+        }
+        
+        let mut new = Brackets::default();
+        new.buffer_map = Some(m.unwrap());
+        new.file_map = Some(Rc::new(file));
+        new.file_name = Some(Path::new(filename).file_name().unwrap().to_str().unwrap().to_string());
+        new.process_buffer()?;
+        Ok(new)
     }
 
     pub fn get_nb_chunks(&self) -> usize {
@@ -566,10 +600,10 @@ impl Brackets {
         TRIM_MODE_START
     }
 
-    pub fn get_state(&self) -> String {
-        let invalid: String = "Invalid".to_owned();
-        let broken: String = "Broken".to_owned();
-        let ok: String = "Ok".to_owned();
+    pub fn get_state(&self) -> &str {
+        let invalid = "Invalid";
+        let broken = "Broken";
+        let ok = "Ok";
 
         if self.flags.contains(&BracketFlag::HasConfig)
             && !self.flags.contains(&BracketFlag::HasValidConfig)
@@ -604,6 +638,14 @@ impl Brackets {
         start_index
     }
 
+    fn get_buffer(&self) -> &str {
+        if let Some(ref map) = self.buffer_map {
+            let result = std::str::from_utf8(&map[..]);
+            return &result.unwrap();
+        }
+        return &self.buffer;
+    }
+
     fn process_buffer(&mut self) -> Result<(), BracketsError> {
         self.is_processing = true;
         self.reset();
@@ -624,6 +666,13 @@ impl Brackets {
         self.close_bks_hash.clear();
         self.flags.clear();
         self.is_valid = None;
+    }
+
+    fn preset(&mut self) {
+        self.reset();
+        self.is_valid = Some(true);
+        self.start_index = Some(0);
+        self.config = Default::default(); 
     }
 
     fn spot_bounds(&mut self) -> Result<(), BracketsError> {
@@ -734,10 +783,10 @@ impl Brackets {
             bypass_ranges.sort_by_key(|x| *x.start());
 
             let mut val = BracketValue::new(key_start, key_end, Default::default());
-            if val.get_length(self.buffer.clone(), trim_mode) > 0 {
+            if val.get_length(self.get_buffer(), trim_mode) > 0 {
                 all_vals_empty = false;
                 if !self.is_cache_off() {
-                    *val.value.borrow_mut() = val.extract_string_from(&(self.buffer.clone()), trim_mode).to_owned();
+                    *val.value.borrow_mut() = val.extract_string_from(self.get_buffer(), trim_mode).to_owned();
                 }
             }
             else {
@@ -774,9 +823,9 @@ impl Brackets {
         let typ = self.define_single_value_type(parent.clone(), p_start);
         let val = BracketValue::new(start, end, typ);
         if !self.is_cache_off() {
-            *val.value.borrow_mut() = val.extract_string_from(&(self.buffer.clone()), trim_mode).to_owned();
+            *val.value.borrow_mut() = val.extract_string_from(self.get_buffer(), trim_mode).to_owned();
         }
-        if val.get_length(self.buffer.clone(), trim_mode) == 0 {
+        if val.get_length(self.get_buffer(), trim_mode) == 0 {
             parent.borrow_mut().set_noval();
             return BuildValueResult::Empty;
         }
@@ -793,7 +842,7 @@ impl Brackets {
                 self.open_bks[1].is_open_first = Some(true);
                 self.flags.retain(|f| *f != BracketFlag::HasConfig);
             } else {
-                let (end_index, map) = bk_regex::extract_config(&self.buffer[self.open_bks[0].idx..]);
+                let (end_index, map) = bk_regex::extract_config(&self.get_buffer()[self.open_bks[0].idx..]);
                 if map.len() == 0 {
                     return Err(BracketsError::new(INVALID_CONFIG));
                 }
@@ -840,20 +889,22 @@ impl Brackets {
     }
 
     fn check_buffer(&self) -> Result<(), BracketsError> {
-        if self.buffer.trim_end().len() == 0 {
+        if self.get_buffer().trim_end().len() == 0 {
             return Err(BracketsError::new(EMPTY_STRING));
         }
         Ok(())
     }
 
     fn collect_comments(&mut self) -> Result<(), BracketsError> {
-        if self.buffer.contains(TOKEN_COMMENT_START) && self.buffer.contains(TOKEN_COMMENT_END) {
-            self.identify_comment_ranges()?
+        let bf = self.get_buffer();
+        if bf.contains(TOKEN_COMMENT_START) && bf.contains(TOKEN_COMMENT_END) {
+            return self.identify_comment_ranges();
         }
-        if self.buffer.contains(TOKEN_COMMENT_START) {
+        let bf = self.get_buffer();
+        if bf.contains(TOKEN_COMMENT_START) {
             return Err(BracketsError::new(BAD_ENDING_COMMENT));
         }
-        if self.buffer.contains(TOKEN_COMMENT_END) {
+        if bf.contains(TOKEN_COMMENT_END) {
             return Err(BracketsError::new(BAD_START_COMMENT));
         }
         
@@ -861,7 +912,7 @@ impl Brackets {
     }
 
     fn identify_comment_ranges(&mut self) -> Result<(), BracketsError> {
-        let mut comments = bk_regex::collect_comments(&self.buffer);
+        let mut comments = bk_regex::collect_comments(self.get_buffer());
         comments.sort();
         let mut comments_iter = comments.iter();
         let mut ok = true;
@@ -906,20 +957,20 @@ impl Brackets {
         self.identify_config();
         if !self.flags.contains(&BracketFlag::HasConfig) {
             let comment_ranges = self.get_comment_ranges();
-            if bk_regex::match_simple_start(&self.buffer, comment_ranges) {
+            if bk_regex::match_simple_start(self.get_buffer(), comment_ranges) {
                 self.flags.push(BracketFlag::HasBeginBracket);
             }
         }
     }
 
     fn identify_config(&mut self) {
-        if bk_regex::match_start(&self.buffer) {
+        if bk_regex::match_start(self.get_buffer()) {
             self.flags.push(BracketFlag::HasConfig);
         }
     }
 
     fn check_end(&mut self) {
-        if bk_regex::match_end(&self.buffer) {
+        if bk_regex::match_end(self.get_buffer()) {
             self.flags.push(BracketFlag::HasEndingBracket);
         }
     }
@@ -936,7 +987,7 @@ impl Brackets {
 
     fn collect_open_bounds(&mut self) {
         self.open_bks
-            .extend(bk_regex::collect_bounds(&self.buffer, &RE_OPEN));
+            .extend(bk_regex::collect_bounds(self.get_buffer(), &RE_OPEN));
         let comment_ranges = self.get_comment_ranges();
         self.open_bks.retain(|b| !comment_ranges.iter().any(|r| r.contains(&b.idx)));
         self.open_bks.sort();
@@ -945,7 +996,7 @@ impl Brackets {
 
     fn collect_close_bounds(&mut self) {
         self.close_bks
-            .extend(bk_regex::collect_bounds(&self.buffer, &RE_CLOSE));
+            .extend(bk_regex::collect_bounds(self.get_buffer(), &RE_CLOSE));
         let comment_ranges = self.get_comment_ranges();
         self.close_bks.retain(|b| !comment_ranges.iter().any(|r| r.contains(&b.idx)));
         self.close_bks.sort();
@@ -974,7 +1025,7 @@ impl Brackets {
         let mut x: usize = 0;
         let length = self.open_bks.len();
         let mut search = true;
-        let escaped_slices = bk_regex::collect_escaped(&self.buffer);
+        let escaped_slices = bk_regex::collect_escaped(self.get_buffer());
         let mut warning: Option<usize> = None;
         let mut free_text_ranges: Vec<RangeInclusive<usize>> = vec![];
         while search {
@@ -1195,14 +1246,14 @@ impl Brackets {
 mod tests_brackets {
     use std::borrow::BorrowMut;
 
-    use regex::Regex;
+    use super::bk_regex::RGX_OPEN;
 
     use super::*;
 
     #[test]
     fn search_open_bk() {
-        let re = Regex::new(&RE_OPEN).unwrap();
-        let haystack = "@[version[@int:1]]";
+        let re = &RGX_OPEN;
+        let haystack = "@[version[=int{1}]";
         let c = re.captures_iter(haystack).count();
         assert_eq!(c, 2);
 
@@ -1252,7 +1303,8 @@ mod tests_brackets {
     fn empty_single() {
         let b = Brackets::build_from_string(String::from("[noval[]]"));
         assert!(b.is_ok());
-        let root = b.unwrap().root;
+        let brackets = b.unwrap();
+        let root = brackets.root.clone();
         let mut array: BkArray = Default::default();
         assert!(match &*root.borrow() {
             BracketSection::Array(a) => {
@@ -1301,7 +1353,7 @@ mod tests_brackets {
     fn sample_file() {
         let file = File::open("/home/soul/dev/rust/calculator/src/data/db.bk");
         if let Ok(mut f) = file {
-            let b = Brackets::build_from_file(f.borrow_mut(), "db").unwrap();
+            let b = Brackets::build_from_file_string(f.borrow_mut(), "db").unwrap();
             assert_eq!(b.get_state(), "Ok");
             assert_eq!(b.get_nb_chunks(), 33);
         }
@@ -1311,10 +1363,10 @@ mod tests_brackets {
     fn config_valid() {
         let file = File::open("/home/soul/dev/rust/calculator/src/data/db.bk");
         if let Ok(mut f) = file {
-            let b = Brackets::build_from_file(f.borrow_mut(), "db").unwrap();
-            assert!(b.config.name == "trees");
-            assert!(b.config.version == "1");
-            assert!(b.config.trimming == "start");
+            let b = Brackets::build_from_file_string(f.borrow_mut(), "db").unwrap();
+            assert_eq!(b.config.name, "trees");
+            assert_eq!(b.config.version, "1");
+            assert_eq!(b.config.trimming, "start");
         }
     }
 
@@ -1322,9 +1374,17 @@ mod tests_brackets {
     fn obj_doc() {
         let file = File::open("/home/soul/dev/rust/calculator/src/data/obj.bk");
         if let Ok(mut f) = file {
-            let b = Brackets::build_from_file(f.borrow_mut(), "obj").unwrap();
+            let b = Brackets::build_from_file_string(f.borrow_mut(), "obj").unwrap();
             assert!(b.is_valid.unwrap_or_default());
+            assert_eq!(b.get_state(), "Ok");
         }
+    }
+
+    #[test]
+    fn obj_doc_map() {
+        let b = Brackets::build_from_file_map("/home/soul/dev/rust/calculator/src/data/obj.bk").unwrap();
+        assert!(b.is_valid.unwrap_or_default());
+        assert_eq!(b.get_state(), "Ok");
     }
 }
 
@@ -1332,3 +1392,4 @@ pub mod bk_error;
 pub mod bk_macro;
 pub mod bk_regex;
 pub mod bk_query;
+pub mod bk_json;

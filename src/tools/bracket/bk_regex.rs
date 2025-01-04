@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use lazy_static::lazy_static;
 use regex::{Regex, RegexBuilder};
 
-use super::{BracketChunk, BracketType, CharSlice, ConfigProps, CLOSE, ESCAPE_CHAR, OPEN, RE_END, RE_OPEN, RE_FREETEXT_START, RE_FREETEXT_END, RE_CLOSE, RE_OPEN_CONFIG_START, RE_OPEN_START, TOKEN_COLON, TOKEN_COLON_END, TOKEN_COMMA, TOKEN_COMMA_END, TOKEN_COMMENT_END, TOKEN_COMMENT_START, TOKEN_DATE, TOKEN_INT, TOKEN_PIPE, TOKEN_PIPE_END, TOKEN_REAL};
+use super::{BracketChunk, BracketType, CharSlice, ConfigProps, CLOSE, ESCAPE_CHAR, OPEN, RE_END, RE_OPEN, RE_FREETEXT_START, RE_FREETEXT_END, RE_CLOSE, RE_OPEN_CONFIG_START, RE_OPEN_START, TOKEN_COMMA, TOKEN_COMMA_END, TOKEN_COMMENT_END, TOKEN_COMMENT_START, TOKEN_DATE, TOKEN_INT, TOKEN_REAL};
 
 lazy_static! {
     static ref RGX_START: Regex = RegexBuilder::new(RE_OPEN_START)
@@ -15,10 +15,10 @@ lazy_static! {
     static ref RGX_OPEN_ANY: Regex = RegexBuilder::new(&regex::escape(&OPEN.to_string()))
         .unicode(true).multi_line(true)
         .build().unwrap();
-    static ref RGX_OPEN: Regex = RegexBuilder::new(&RE_OPEN)
+    pub static ref RGX_OPEN: Regex = RegexBuilder::new(&RE_OPEN)
         .unicode(true).multi_line(true)
         .build().unwrap();
-    static ref RGX_CLOSE: Regex = RegexBuilder::new(&RE_CLOSE)
+    pub static ref RGX_CLOSE: Regex = RegexBuilder::new(&RE_CLOSE)
         .unicode(true).multi_line(true)
         .build().unwrap();
     static ref RGX_COMMENTS: Regex = RegexBuilder::new(format!(
