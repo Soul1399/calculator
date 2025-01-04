@@ -1,11 +1,11 @@
 use std::{cell::RefCell, rc::Rc};
 
+use date_format_parser::parse_date;
 use json::JsonValue;
-use uuid::Uuid;
 
-use super::{bk_error::BracketsError, BracketArray, BracketSection, BracketType, BracketValue, Brackets, CharSlice, CLOSE, OPEN, PIPE_CHAR};
+use super::{bk_error::BracketsError, bk_regex::RGX_STD_INT, BracketArray, BracketSection, BracketType, BracketValue, Brackets, CharSlice, CLOSE, COLON_CHAR, OPEN, PIPE_CHAR};
 
-
+use lexical_parse_integer::FromLexical;
 
 impl Brackets {
     pub fn build_from_json(json_string: &str) -> Result<Brackets, BracketsError> {
@@ -101,7 +101,7 @@ impl Brackets {
                         BracketType::Real => {
                             Some(BracketSection::Real(Rc::new(RefCell::new(v))))
                         },
-                        BracketType::Simple | BracketType::FreeText(_) => {
+                        BracketType::Simple | BracketType::FreeText(_) | BracketType::Date => {
                             Some(BracketSection::Str(Rc::new(RefCell::new(v))))
                         },
                         _ => None
@@ -113,12 +113,26 @@ impl Brackets {
     }
     
     fn get_json_bracket_type(value: &JsonValue) -> BracketType {
+        if Self::json_number_is_integer(value) {
+            return BracketType::Int;
+        }
+        if Self::json_string_is_date(value) {
+            return BracketType::Date;
+        }
         match value {
-            JsonValue::Short(_) => BracketType::Int,
             JsonValue::Number(_) => BracketType::Real,
-            JsonValue::String(ref s) => {
+            JsonValue::Short(_) | JsonValue::String(_) => {
+                let s: &str = match value {
+                    JsonValue::Short(short) => short.as_str(),
+                    JsonValue::String(s) => &s,
+                    _ => unreachable!()
+                };
                 if s.contains(OPEN) || s.contains(CLOSE) {
-                    BracketType::FreeText(CharSlice { character: PIPE_CHAR, start: Default::default(), quantity: 1 })
+                    BracketType::FreeText(CharSlice {
+                        character: if s.starts_with(PIPE_CHAR) { COLON_CHAR } else { PIPE_CHAR }, 
+                        start: Default::default(), 
+                        quantity: 1
+                    })
                 }
                 else {
                     BracketType::Simple
@@ -132,7 +146,12 @@ impl Brackets {
         let btype = Brackets::get_json_bracket_type(value);
         match value {
             JsonValue::Null => None,
-            JsonValue::Boolean(_) | JsonValue::Short(_) | JsonValue::Number(_) | JsonValue::String(_) => Some(BracketValue {
+            JsonValue::Short(_) | JsonValue::String(_) => Some(BracketValue {
+                value: Rc::new(RefCell::new(value.to_string())), 
+                btyp: btype,
+                ..Default::default()
+            }),
+            JsonValue::Boolean(_) | JsonValue::Number(_) => Some(BracketValue {
                 value: Rc::new(RefCell::new(value.dump())), 
                 btyp: btype,
                 ..Default::default()
@@ -146,21 +165,162 @@ impl Brackets {
         }
     }
 
-    fn get_json_section(value: &JsonValue, name: &str) -> BracketSection {
+    fn json_number_is_integer(value: &JsonValue) -> bool {
         match value {
-            JsonValue::Array(_) | JsonValue::Object(_) => {},
-            _ => unreachable!()
+            JsonValue::Number(_) => {
+                let s = value.dump();
+                if RGX_STD_INT.is_match(&s) {
+                    return true;
+                }
+                let bytes = s.as_bytes();
+                let parse_int = isize::from_lexical(bytes);
+                if parse_int.is_ok() {
+                    return true;
+                }
+                let parse_int = usize::from_lexical(bytes);
+                if parse_int.is_ok() {
+                    return true;
+                }
+                let parse_int = i64::from_lexical(bytes);
+                if parse_int.is_ok() {
+                    return true;
+                }
+                let parse_int = u64::from_lexical(bytes);
+                if parse_int.is_ok() {
+                    return true;
+                }
+                false
+            },
+            _ => false
+        }
+    }
+
+    fn json_string_is_date(value: &JsonValue) -> bool {
+        match value {
+            JsonValue::Short(_) | JsonValue::String(_) => {
+                let s: &str = match value {
+                    JsonValue::Short(short) => short.as_str(),
+                    JsonValue::String(s) => &s,
+                    _ => unreachable!()
+                };
+                if let Ok(_) = parse_date(s) {
+                    return true;
+                }
+                false
+            },
+            _ => false
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests_brackets_json {
+    use std::{fs::File, io::Read, path::Path};
+
+    use crate::tools::bracket::{BracketSection, BracketType, Brackets};
+
+    const PATH_FILES: &str = "/home/soul/dev/rust/calculator/src/data";
+
+    #[test]
+    fn test_empty_json() {
+        let filename = Path::new(PATH_FILES).join("empty.json");
+        let file = File::open(filename.to_str().unwrap());
+        if let Ok(mut f) = file {
+            let mut buf: String = Default::default();
+            _ = f.read_to_string(&mut buf);
+            let result = Brackets::build_from_json(&buf);
+            assert!(result.is_ok());
+            let bk = result.unwrap();
+            let root = bk.root.borrow_mut();
+            if let BracketSection::Array(ref a) = *root {
+                assert_eq!(a.borrow().array.len(), 0);
+            }
+            else {
+                assert!(false);
+            }
+        }
+    }
+
+    #[test]
+    fn test_json_values() {
+        let json = "toto";
+        let result = Brackets::build_from_json(&format!("\"{}\"", json));
+        assert!(result.is_ok());
+        let bk = result.unwrap();
+        let root = bk.root.borrow_mut();
+        if let BracketSection::Str(ref a) = *root {
+            assert_eq!(a.borrow().get_length("", bk.get_trim_mode()), json.len());
+            assert_eq!(a.borrow().value.borrow().as_str(), json);
+            assert!(match a.borrow().btyp { BracketType::Simple => true, _ => false });
+        }
+        else {
+            assert!(false);
         }
 
-        if let JsonValue::Array(a) = value {
-            let mut array = BracketArray {
-                id: Uuid::new_v4(),
-                name: BracketValue { value: Rc::new(RefCell::new(name.to_string())), ..Default::default() },
-                ..Default::default()
-            };
-            //a.iter().map(|x| )
-            return BracketSection::Array(Rc::new(RefCell::new(array)));
+        let json = "object[45]";
+        let result = Brackets::build_from_json(&format!("\"{}\"", json));
+        assert!(result.is_ok());
+        let bk = result.unwrap();
+        let root = bk.root.borrow_mut();
+        if let BracketSection::Str(ref a) = *root {
+            assert_eq!(a.borrow().get_length("", bk.get_trim_mode()), json.len());
+            assert_eq!(a.borrow().value.borrow().as_str(), json);
+            assert!(match a.borrow().btyp { BracketType::FreeText(_) => true, _ => false });
         }
-        Default::default()
+        else {
+            assert!(false);
+        }
+
+        let json = 40;
+        let result = Brackets::build_from_json(&json.to_string());
+        assert!(result.is_ok());
+        let bk = result.unwrap();
+        let root = bk.root.borrow_mut();
+        if let BracketSection::Int(ref a) = *root {
+            assert_eq!(a.borrow().value.borrow().as_str(), &json.to_string());
+            assert!(match a.borrow().btyp { BracketType::Int => true, _ => false });
+        }
+        else {
+            assert!(false);
+        }
+        
+        let json = 140.6652;
+        let result = Brackets::build_from_json(&json.to_string());
+        assert!(result.is_ok());
+        let bk = result.unwrap();
+        let root = bk.root.borrow_mut();
+        if let BracketSection::Real(ref a) = *root {
+            assert_eq!(a.borrow().value.borrow().as_str(), &json.to_string());
+            assert!(match a.borrow().btyp { BracketType::Real => true, _ => false });
+        }
+        else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn test_single_line_file() {
+        let filename = Path::new(PATH_FILES).join("products.json");
+        let file = File::open(filename.to_str().unwrap());
+        if let Ok(mut f) = file {
+            let mut buf: String = Default::default();
+            _ = f.read_to_string(&mut buf);
+            let result = Brackets::build_from_json(&buf);
+            assert!(result.is_ok());
+            let bk = result.unwrap();
+            let root = bk.root.borrow_mut();
+            if let BracketSection::Array(ref a) = *root {
+                assert_eq!(a.borrow().array.len(), 4);
+                let item = a.borrow().array.iter().next().unwrap().clone();
+                if let BracketSection::Array(ref i) = item.as_ref() {
+                    assert_eq!(i.borrow().name.value.borrow().as_str(), "products");
+                    assert_eq!(i.borrow().array.len(), 30);
+                }
+                assert!(true);
+            }
+            else {
+                assert!(false);
+            }
+        }
     }
 }

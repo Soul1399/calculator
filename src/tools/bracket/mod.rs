@@ -4,7 +4,7 @@ use bk_error::{BAD_ENDING_COMMENT, BAD_START_COMMENT};
 use lazy_static::lazy_static;
 use memmap2::{Mmap, MmapOptions};
 use uuid::Uuid;
-
+use lexical_parse_integer::FromLexical;
 use crate::{bk_config, date::DayDate, tools::bracket::bk_error::{WARNING_ESCAPED, WARNING_FREE_TEXT}};
 use self::bk_error::{
     BracketsError, BASE_FORMAT_ERROR, EMPTY_STRING, FORMAT_ERROR, INVALID_CONFIG,
@@ -152,7 +152,19 @@ impl BracketValue {
             _ => { return None }
         }
         let text = self.extract_string_from(buffer, trim_mode);
-        match str::parse::<isize>(text) {
+        match isize::from_lexical(text.as_bytes()) {
+            Err(_) => None,
+            Ok(i) => Some(i)
+        }
+    }
+
+    pub fn extract_uint_from(&self, buffer: &str, trim_mode: &str) -> Option<usize> {
+        match self.btyp {
+            BracketType::Int => {},
+            _ => { return None }
+        }
+        let text = self.extract_string_from(buffer, trim_mode);
+        match usize::from_lexical(text.as_bytes()) {
             Err(_) => None,
             Ok(i) => Some(i)
         }
@@ -1393,3 +1405,4 @@ pub mod bk_macro;
 pub mod bk_regex;
 pub mod bk_query;
 pub mod bk_json;
+pub mod bk_file;

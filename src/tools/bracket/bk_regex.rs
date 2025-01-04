@@ -6,6 +6,9 @@ use regex::{Regex, RegexBuilder};
 use super::{BracketChunk, BracketType, CharSlice, ConfigProps, CLOSE, ESCAPE_CHAR, OPEN, RE_END, RE_OPEN, RE_FREETEXT_START, RE_FREETEXT_END, RE_CLOSE, RE_OPEN_CONFIG_START, RE_OPEN_START, TOKEN_COMMA, TOKEN_COMMA_END, TOKEN_COMMENT_END, TOKEN_COMMENT_START, TOKEN_DATE, TOKEN_INT, TOKEN_REAL};
 
 lazy_static! {
+    pub static ref RGX_STD_INT: Regex = RegexBuilder::new(r"^[\+-]?\d+$")
+        .unicode(true).multi_line(false)
+        .build().unwrap();
     static ref RGX_START: Regex = RegexBuilder::new(RE_OPEN_START)
         .unicode(true).multi_line(true)
         .build().unwrap();
@@ -42,8 +45,8 @@ lazy_static! {
         .unicode(true).multi_line(true)
         .build().unwrap();
     static ref RGX_TOKEN_END_FREETEXT: Regex = RegexBuilder::new(&RE_FREETEXT_END)
-    .unicode(true).multi_line(true)
-    .build().unwrap();
+        .unicode(true).multi_line(true)
+        .build().unwrap();
 }
 
 pub fn match_simple_start(s: &str, ranges_of_comments: Vec<RangeInclusive<usize>>) -> bool {
