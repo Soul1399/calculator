@@ -31,6 +31,15 @@ macro_rules! bk_config {
         }
 
         impl BracketConfig {
+            pub fn get_config_value(&mut self, key: &str) -> &str {
+                $(
+                    if key == stringify!($ident) {
+                        return &self.$ident;
+                    }
+                )*
+                Default::default()
+            }
+            
             pub fn set_config(&mut self, key: &str, value: &str) {
                 $(
                     if key == stringify!($ident) {
@@ -39,6 +48,15 @@ macro_rules! bk_config {
                         }
                     }
                 )*
+            }
+
+            pub fn is_empty(&self) -> bool {
+                $(
+                    if self.$ident.len() > 0 {
+                        return false;
+                    }
+                )*
+                true
             }
 
             $(

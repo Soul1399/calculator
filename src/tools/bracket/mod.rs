@@ -378,6 +378,7 @@ pub enum BracketFlag {
 pub enum BracketType {
     #[default]
     Simple,
+    Config,
     FreeText(CharSlice),
     Int,
     Date,
@@ -858,9 +859,15 @@ impl Brackets {
                 if map.len() == 0 {
                     return Err(BracketsError::new(INVALID_CONFIG));
                 }
-                //self.root.config = Rc::new(map);
+                
                 for (k, v) in map {
                     self.config.set_config(k.as_str(), v.as_str());
+                }
+                for o in self.open_bks.iter_mut().filter(|x| x.idx < end_index) {
+                    o.typ = BracketType::Config;
+                }
+                for c in self.close_bks.iter_mut().filter(|x| x.idx <= end_index) {
+                    c.typ = BracketType::Config;
                 }
                 self.flags.push(BracketFlag::HasValidConfig);
                 let firstb = self.open_bks.iter_mut().find(|o| o.idx > end_index);
