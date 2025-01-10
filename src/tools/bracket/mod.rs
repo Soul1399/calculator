@@ -651,6 +651,29 @@ impl Brackets {
         start_index
     }
 
+    pub fn remove_cache(&mut self) {
+        Self::remove_value_cache(&mut self.root.borrow_mut());
+    }
+
+    fn remove_value_cache(section: &mut BracketSection) {
+        match *section {
+            BracketSection::Int(ref v) => *v.borrow_mut().value.borrow_mut() = Default::default(),
+            BracketSection::Str(ref v) => *v.borrow_mut().value.borrow_mut() = Default::default(),
+            BracketSection::Real(ref v) => *v.borrow_mut().value.borrow_mut() = Default::default(),
+            BracketSection::Array(ref mut bk_array) => {
+                let mut index: usize = 0;
+                let length = bk_array.borrow().array.len();
+                let array = &mut bk_array.as_ref().borrow_mut().array;
+                while index < length {
+                    let item = Rc::make_mut(&mut array[index]);
+                    Self::remove_value_cache(item);
+                    index += 1;
+                }
+            },
+            BracketSection::NoVal => {}
+        }
+    }
+
     fn get_buffer(&self) -> &str {
         if let Some(ref map) = self.buffer_map {
             let result = std::str::from_utf8(&map[..]);

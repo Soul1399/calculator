@@ -216,7 +216,6 @@ impl Brackets {
 #[cfg(test)]
 mod tests_brackets_json {
     use std::{fs::File, io::Read, path::Path};
-
     use crate::tools::bracket::{BracketSection, BracketType, Brackets};
 
     const PATH_FILES: &str = "/home/soul/dev/rust/calculator/src/data";
