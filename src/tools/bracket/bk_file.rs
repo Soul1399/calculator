@@ -1,12 +1,13 @@
-use std::{cell::RefMut, ops::DerefMut, rc::Rc};
+use std::{fs::File, io::{self, Write}, ops::DerefMut, rc::Rc};
 
-use super::{BkArray, BkValue, BracketChunk, BracketConfig, BracketFlag, BracketSection, BracketType, BracketValue, Brackets, CharSlice, ConfigProps, AT_CHAR, CLOSE, OPEN};
+use super::{BracketChunk, BracketConfig, BracketFlag, BracketSection, BracketType, BracketValue, Brackets, CharSlice, ConfigProps, AT_CHAR, CLOSE, OPEN};
 
 impl Brackets {
     pub fn make_indexing(&mut self, config: Option<BracketConfig>) {
         if self.buffer.len() > 0 || self.file_map.is_some() {
             return;
         }
+        self.is_processing = true;
         if let Some(c) = config {
             self.config = c;
             if !self.flags.contains(&BracketFlag::HasConfig) {
@@ -22,6 +23,15 @@ impl Brackets {
 
         self.buffer = String::from_utf8(utf8_text).unwrap();
         self.remove_cache();
+        self.is_processing = false;
+    }
+
+    pub fn write_into_new_file(&self, full_path: &str) -> io::Result<File> {
+        let mut file = File::create_new(full_path)?;
+        if let Err(e) = file.write_all(self.buffer.as_bytes()) {
+            return Err(e);
+        }
+        return Ok(file);
     }
 
     fn make_config_indexing(&mut self, target_bytes: &mut Vec<u8>) -> usize {
@@ -56,17 +66,20 @@ impl Brackets {
         let mut next_index = index;
         match value.as_ref() {
             BracketSection::Array(a) => {
-                next_index += Self::start_name_into_bytes(&a.borrow().name.value.borrow(), target);
+                let mut temp_array = a.take();
+                temp_array.name.start = next_index;
+                next_index += Self::start_name_into_bytes(&temp_array.name.value.borrow(), target);
+                temp_array.name.end = next_index;
                 target.extend(OPEN.encode_utf8(&mut [0u8;4]).as_bytes());
                 next_index += 1;
                 let open_idx = next_index;
                 let mut x: usize = 0;
-                let temp_array = a.take();
                 let ln = temp_array.array.len();
                 while x < ln {
                     next_index = self.make_value_indexing(next_index, temp_array.array[x].clone(), target);
                     x += 1;
                 }
+                temp_array.name.value.replace(Default::default());
                 a.replace(temp_array);
                 target.extend(CLOSE.encode_utf8(&mut [0u8;4]).as_bytes());
                 next_index += 1;
@@ -185,7 +198,9 @@ impl Brackets {
 
 #[cfg(test)]
 mod tests_brackets_file {
-    use std::{fs::File, io::Read, path::Path, time::Instant};
+    use std::{fs::{self, File}, io::Read, path::Path, time::Instant};
+    use crate::tools::dir::try_move_into_trash;
+
     use super::*;
 
     const PATH_FILES: &str = "/home/soul/dev/rust/calculator/src/data";
@@ -252,8 +267,12 @@ mod tests_brackets_file {
             }
             
             bk.make_indexing(None);
-
             assert_ne!(bk.buffer.len(), 0);
+            let pth = Path::new(PATH_FILES).join("products.bk");
+            let filename = pth.to_str().unwrap();
+            try_move_into_trash(filename);
+            let f = bk.write_into_new_file(filename).unwrap();
+            assert!(fs::exists(filename).unwrap_or(false));
         }
     }
 }

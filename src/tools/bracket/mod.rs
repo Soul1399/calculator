@@ -663,6 +663,7 @@ impl Brackets {
             BracketSection::Array(ref mut bk_array) => {
                 let mut index: usize = 0;
                 let length = bk_array.borrow().array.len();
+                //bk_array.borrow_mut().name.
                 let array = &mut bk_array.as_ref().borrow_mut().array;
                 while index < length {
                     let item = Rc::make_mut(&mut array[index]);

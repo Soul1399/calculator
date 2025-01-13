@@ -21,6 +21,7 @@ memmap2 = "0.9.5"
 json = "0.12.4"
 lexical-parse-integer = "1.0.5"
 date_format_parser = "0.1.0"
+trash = "5.2.1"
 [dependencies.uuid]
 version = "1.11.0"
 features = [

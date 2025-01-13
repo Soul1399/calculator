@@ -15,3 +15,10 @@ pub fn get_os_file_names(path: &str) -> io::Result<Vec<OsString>> {
 
     Ok(entries)
 }
+
+pub fn try_move_into_trash(path: &str) -> bool {
+    if let Err(_) = trash::delete(path) {
+        return false
+    }
+    true
+}

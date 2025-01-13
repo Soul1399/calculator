@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use date_format_parser::parse_date;
 use json::JsonValue;
 
-use super::{bk_error::BracketsError, bk_regex::RGX_STD_INT, BracketArray, BracketSection, BracketType, BracketValue, Brackets, CharSlice, CLOSE, COLON_CHAR, OPEN, PIPE_CHAR};
+use super::{bk_error::BracketsError, bk_regex::RGX_STD_INT, BkArray, BracketArray, BracketSection, BracketType, BracketValue, Brackets, CharSlice, CLOSE, COLON_CHAR, OPEN, PIPE_CHAR};
 
 use lexical_parse_integer::FromLexical;
 
@@ -41,7 +41,7 @@ impl Brackets {
         };
         if name.is_none() {
             let bval = Self::get_json_bracket_value(value, name);
-            if let Some(value) = Self::get_basic_section_from_json(value, bval) {
+            if let Some(value) = Self::get_basic_section_from_json(value, bval, name) {
                 self.root = Rc::new(RefCell::new(value));
                 return Ok(());
             }
@@ -73,7 +73,7 @@ impl Brackets {
             },
             _ => {
                 let bval = Self::get_json_bracket_value(value, name);
-                let s = Self::get_basic_section_from_json(value, bval).unwrap();
+                let s = Self::get_basic_section_from_json(value, bval, name).unwrap();
                 target.array.push(Rc::new(s));
             }
         };
@@ -85,29 +85,49 @@ impl Brackets {
         Ok(())
     }
 
-    fn get_basic_section_from_json(value: &JsonValue, bval: Option<BracketValue>) -> Option<BracketSection> {
+    fn get_basic_section_from_json(value: &JsonValue, bval: Option<BracketValue>, name: Option<&str>) -> Option<BracketSection> {
+        let array = BkArray::new(RefCell::new(Default::default()));
+        array.borrow_mut().name = BracketValue { btyp: BracketType::Name, value: Rc::new(RefCell::new(name.unwrap_or_default().to_string())), ..Default::default() };
         if bval.is_none() {
-            return Some(BracketSection::NoVal);
+            if name.is_some() {
+                array.borrow_mut().array.push(Rc::new(BracketSection::NoVal));
+            }
+            else {
+                return Some(BracketSection::NoVal);
+            }
         }
         else {
             match value {
                 JsonValue::Array(_) | JsonValue::Object(_) => { },
                 _ => {
                     let v = bval.unwrap();
-                    return match v.btyp {
+                    let sub_section: BracketSection;
+                    match v.btyp {
                         BracketType::Int => {
-                            Some(BracketSection::Int(Rc::new(RefCell::new(v))))
+                            sub_section = BracketSection::Int(Rc::new(RefCell::new(v)));
                         },
                         BracketType::Real => {
-                            Some(BracketSection::Real(Rc::new(RefCell::new(v))))
+                            sub_section = BracketSection::Real(Rc::new(RefCell::new(v)));
                         },
                         BracketType::Simple | BracketType::FreeText(_) | BracketType::Date => {
-                            Some(BracketSection::Str(Rc::new(RefCell::new(v))))
+                            sub_section = BracketSection::Str(Rc::new(RefCell::new(v)));
                         },
-                        _ => None
+                        _ => {
+                            return None;
+                        }
                     };
+                    if name.is_some() {
+                        array.borrow_mut().array.push(Rc::new(sub_section));
+                    }
+                    else {
+                        return Some(sub_section);
+                    }
                 }
             }
+        }
+        if array.borrow().array.len() > 0 {
+            let section = BracketSection::Array(array);
+            return Some(section)
         }
         None
     }
@@ -314,6 +334,14 @@ mod tests_brackets_json {
                 if let BracketSection::Array(ref i) = item.as_ref() {
                     assert_eq!(i.borrow().name.value.borrow().as_str(), "products");
                     assert_eq!(i.borrow().array.len(), 30);
+                    for item in i.borrow().array.iter() {
+                        match &*item.clone() {
+                            BracketSection::Array(a) => {
+                                assert_eq!(a.borrow().name.value.borrow().len(), 0)
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 assert!(true);
             }
